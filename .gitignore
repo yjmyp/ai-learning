@@ -1,3 +1,4 @@
-chat.py
+﻿chat.py
+rag/rag_chat.py
 *.pyc
 __pycache__/
