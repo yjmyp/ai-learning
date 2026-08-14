@@ -15,15 +15,17 @@
 3. **向量检索 RAG**：`rag/rag_vector.py` + `rag/rag_chat_vector.py` —— 用多语言向量模型（bge）做语义检索
 4. **Streamlit 网页版**：`rag/rag_app.py` —— 网页界面 + 可溯源折叠面板，本地可跑
 5. **Agent 工具调用**：`agent_calc.py` —— 让模型按 JSON 格式调用 add/subtract/multiply 工具
-6. **Git 基础**：init / add / commit / push，仓库 `ai-learning`（GitHub 用户名 YJMYP）
+6. **Git 基础**：init / add / commit / push，仓库 `ai-learning`（GitHub 用户名 yjmyp）
 7. **微信接入本机 Codex**：codex-weixin（Node 服务 + 扫码登录 + 微信指挥本机 Codex）
+8. **Streamlit Cloud 部署上线**：`rag_app.py` 已部署到公开网址 https://ai-learning-rkcci4rwsv6aewbthzbvvc.streamlit.app/ —— 学会用 requirements.txt 管依赖、st.secrets 管密钥、修复云端相对路径；教训：API key 不能硬编码进代码（会随 GitHub 泄露）
+9. **微信全权限遥控**：codex-weixin 已配置为 exec + danger-full-access，微信会话可写文件、推 GitHub（踩坑：codexExecSandbox 修改后必须重启服务才生效；workspace-write + approval never 会被 Codex CLI 降级为只读；目录需在 ~/.codex/config.toml 标记 trusted）
 
 ## 接下来计划（2026-08-14 起）
 
-1. 【今天/明天】把 `rag_app.py` 部署到 Streamlit Cloud（免费），拿到可访问的网址
-2. 【8/18 前后】独立重构 RAG：不看旧代码，从零写"RAG 问答 + 网页版"，作为能力验证
-3. 【穿插概念课】Chroma 向量数据库、Function Calling 原理、双 Agent 决策器架构
-4. 【每周固定】LeetCode 简单题 3 道 + 面试高频问题 5 道提前准备
+1. 【8/18 前后】独立重构 RAG：不看旧代码，从零写"RAG 问答 + 网页版"，作为能力验证
+2. 【穿插概念课】Chroma 向量数据库、Function Calling 原理、双 Agent 决策器架构
+3. 【每周固定】LeetCode 简单题 3 道 + 面试高频问题 5 道提前准备
+4. 【可选优化】把部署网址整理进作品集/简历；旧 DeepSeek key 曾进过 GitHub 历史，若仓库公开建议换新 key
 
 ## 我的特点（回答时要考虑）
 
