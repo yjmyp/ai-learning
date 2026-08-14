@@ -1,4 +1,6 @@
-﻿chat.py
+chat.py
 rag/rag_chat.py
 *.pyc
 __pycache__/
+.streamlit/secrets.toml
+.env
