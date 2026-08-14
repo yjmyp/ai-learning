@@ -20,16 +20,16 @@
 8. **Streamlit Cloud 部署上线**：`rag_app.py` 已部署到公开网址 https://ai-learning-rkcci4rwsv6aewbthzbvvc.streamlit.app/ —— 学会用 requirements.txt 管依赖、st.secrets 管密钥、修复云端相对路径；教训：API key 不能硬编码进代码（会随 GitHub 泄露）
 9. **微信全权限遥控**：codex-weixin 已配置为 exec + danger-full-access，微信会话可写文件、推 GitHub（踩坑：codexExecSandbox 修改后必须重启服务才生效；workspace-write + approval never 会被 Codex CLI 降级为只读；目录需在 ~/.codex/config.toml 标记 trusted）
 
-## 接下来计划（2026-08-15 起，v3）
+## 接下来计划（2026-08-15 起，v4）
 
-> 详细计划见 `PLAN.md`（三视频路线 + 2026 市场 JD 校准版）
+> 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`
 
-0. 【8/15 完成】赛道定位：已搜南京真实 JD 15 家（BOSS直聘），学习清单见 `学习笔记/JD调研-南京AI应用开发实习.md`
-1. 【8/16-8/20】RAG 重构 v2：Chroma 向量库 + FastAPI + 10 个项目 Q&A，第二版上线（硬截止 8/20）
+0. 【8/15 完成】赛道定位：JD 调研 30+ 家（A/B/C 档）+ 三视频核对 + PLAN v4 定稿
+1. 【8/16-8/20】RAG 重构 v2：rag2 代码已写完，跑通验证 + eval 评估集 + 10 Q&A，第二版上线（硬截止 8/20）
 2. 【8/21-9/5】Agent 核心 + LangChain + 自动化 Agent 项目上线
-3. 【9/6-9/15】打磨项目 + 简历双轨 + 面试 50 问 + LeetCode 累计 40 题；9/10 试投 2-3 家
+3. 【9/6-9/15】打磨 + 简历 + 面试 50 问 + LeetCode 40 题；9/10-9/15 第二次试投
 4. 【9/16-10 月】批量投递 + 面试复盘
-5. 【每周固定】LeetCode 3 题 + 面试 5 问（与当前项目绑定）
+5. 【每周固定】LeetCode 3 题 + 面试 5 问；【每日】学习结束更新进度日志 + 微信反馈
 
 ## 我的特点（回答时要考虑）
 
@@ -45,3 +45,4 @@
 - 一次只给一小步，确认后再继续
 - 涉及命令或代码，直接给可复制的完整内容
 - 每完成一步给明确的正反馈，再给下一步
+- 每天学习结束：更新 `学习进度日志.md`，并给我客观反馈（完成/评价/卡点/明天一步）

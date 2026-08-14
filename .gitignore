@@ -5,3 +5,4 @@ __pycache__/
 .streamlit/secrets.toml
 .env
 local_key.py
+rag2/data/
