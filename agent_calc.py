@@ -1,9 +1,12 @@
-﻿# agent_calc.py —— 会算数的 Agent（AI 提议 -> 程序执行 -> 结果回填）
+# agent_calc.py —— 会算数的 Agent（AI 提议 -> 程序执行 -> 结果回填）
 import json
 import re
 import requests
 
-API_KEY = "sk-75255e06772248569871fdb19977fab4"
+try:
+    from local_key import API_KEY
+except ImportError:
+    API_KEY = ""
 
 url = "https://api.deepseek.com/chat/completions"
 headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}

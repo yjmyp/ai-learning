@@ -1,4 +1,4 @@
-﻿# rag_chat_vector.py —— 完整向量版 RAG 问答（bge 中文模型 + DeepSeek）
+# rag_chat_vector.py —— 完整向量版 RAG 问答（bge 中文模型 + DeepSeek）
 import os
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"   # 国内镜像，下载模型用
 
@@ -7,7 +7,10 @@ import requests
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-API_KEY = "sk-75255e06772248569871fdb19977fab4"
+try:
+    from local_key import API_KEY
+except ImportError:
+    API_KEY = ""
 
 url = "https://api.deepseek.com/chat/completions"
 headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
