@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>简历生成器（比视频更好用版）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 0; background: #eef1f5; color: #2d3436; }
+  header { background: linear-gradient(90deg, #2d3436, #0984e3); color: #fff; padding: 16px 24px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  .main { max-width: 1280px; margin: 0 auto; padding: 16px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .panel { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 16px; }
+  .form-panel { flex: 1 1 46%; min-width: 400px; }
+  .out-panel { flex: 1 1 50%; min-width: 420px; }
+  h2 { font-size: 15px; margin: 16px 0 8px; color: #2d3436; }
+  h2:first-child { margin-top: 0; }
+  label { display: block; font-size: 13px; margin: 8px 0 3px; color: #555; }
+  input, textarea { width: 100%; padding: 8px 10px; border: 1px solid #b2bec3; border-radius: 7px; font-size: 13px; font-family: inherit; }
+  textarea { resize: vertical; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > div { flex: 1; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+  button { padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; background: #0984e3; color: #fff; }
+  button:hover { opacity: .88; }
+  button.green { background: #00b894; }
+  button.gray { background: #636e72; }
+  button.orange { background: #e17055; }
+  .preview { border: 1px solid #dfe6e9; border-radius: 10px; padding: 20px; background: #fff; min-height: 500px; font-size: 14px; line-height: 1.65; }
+  .preview h1 { font-size: 22px; margin: 0 0 4px; }
+  .preview .contact { color: #636e72; font-size: 13px; margin-bottom: 10px; }
+  .preview h3 { border-bottom: 2px solid #0984e3; padding-bottom: 3px; margin: 16px 0 6px; font-size: 15px; }
+  .preview .proj { margin-bottom: 12px; }
+  .preview .proj-title { font-weight: 700; }
+  .preview .proj-tech { color: #0984e3; font-size: 12.5px; margin: 2px 0 4px; }
+  .preview ul { margin: 4px 0; padding-left: 20px; }
+  .preview li { margin: 2px 0; }
+  .jdcheck { margin-top: 14px; }
+  .jdcheck textarea { min-height: 90px; }
+  .kw { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 12px; margin: 3px; }
+  .kw.ok { background: #d5f5e3; color: #00b894; }
+  .kw.miss { background: #fde2e2; color: #e17055; }
+  .score { font-size: 14px; font-weight: 700; margin-top: 10px; }
+  .tip { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>简历生成器</h1>
+  <p>填左边的表，右边实时出简历；可复制 Markdown / 打印存 PDF；贴 JD 自动查关键词覆盖。内容自动保存在浏览器。</p>
+</header>
+<div class="main">
+  <div class="panel form-panel">
+    <h2>基本信息</h2>
+    <div class="row2">
+      <div><label>姓名</label><input id="name" value="余剑"></div>
+      <div><label>电话</label><input id="phone" placeholder="138xxxx"></div>
+    </div>
+    <div class="row2">
+      <div><label>邮箱</label><input id="email" placeholder="xxx@xx.com"></div>
+      <div><label>城市</label><input id="city" value="南京"></div>
+    </div>
+    <div class="row2">
+      <div><label>求职意向</label><input id="target" value="AI 应用开发实习生（南京优先，可远程）"></div>
+      <div><label>毕业时间</label><input id="grad" value="2027.06"></div>
+    </div>
+    <div class="row2">
+      <div><label>到岗时间</label><input id="start" value="2026.08 下旬"></div>
+      <div><label>每周天数 / 时长</label><input id="weeks" value="4-5 天/周 · 3-6 个月"></div>
+    </div>
+    <div class="row2">
+      <div><label>英语水平</label><input id="english" placeholder="四级/六级"></div>
+      <div><label>GitHub / 项目链接</label><input id="github" value="https://github.com/yjmyp/ai-learning"></div>
+    </div>
+
+    <h2>教育背景</h2>
+    <div class="row2">
+      <div><label>学校</label><input id="school" value="南京邮电大学"></div>
+      <div><label>专业</label><input id="major" value="网络工程"></div>
+    </div>
+    <div class="row2">
+      <div><label>学历 / 届别</label><input id="degree" value="本科 · 2027 届"></div>
+      <div><label>相关课程</label><input id="courses" value="计算机网络、数据结构、操作系统、数据库原理"></div>
+    </div>
+
+    <h2>项目 1（主项目，写最深的）</h2>
+    <label>名称 + 时间</label><input id="p1name" value="RAG 知识库问答系统（已上线） · 2026.07-2026.08">
+    <label>技术栈</label><input id="p1tech" value="Python / sentence-transformers(bge) / Chroma / FastAPI / Streamlit / DeepSeek API">
+    <label>做了什么（2-3 条，用 STAR + 数字）</label>
+    <textarea id="p1body" rows="5">独立完成端到端 RAG：文档解析 → 切分（300字/块、50字重叠）→ bge 向量化 → Chroma 向量库 → top-k 召回 → 重排 → 大模型生成带来源引用的回答；11 篇资料入库 254 块，自建 12 条评估集，检索 top-3 命中率 83%；部署上线 Streamlit Cloud，回答可溯源；FastAPI 封装接口层，前后端分离，GitHub 开源。</textarea>
+    <label>上线链接</label><input id="p1link" value="https://ai-learning-rkcci4rwsv6aewbthzbvvc.streamlit.app/">
+
+    <h2>项目 2（加分项）</h2>
+    <label>名称 + 时间</label><input id="p2name" value="Agent 工具调用 Demo · 2026.08">
+    <label>技术栈</label><input id="p2tech" value="Python / Function Calling / JSON 协议">
+    <label>做了什么（1-2 条）</label>
+    <textarea id="p2body" rows="3">实现大模型按 JSON 协议调用 add/subtract/multiply 工具，理解 Agent 工具调用与 ReAct 链路；正在构建"行业机会调研 Agent"（规划→工具→记忆→反思，带评估集）。</textarea>
+
+    <h2>技能</h2>
+    <textarea id="skills" rows="4">语言：Python（熟练）、SQL（基础）
+AI 应用开发：大模型 API（DeepSeek/OpenAI 系）、Prompt 工程、RAG、向量数据库（Chroma）、Function Calling/Tool Use、重排
+工程与部署：FastAPI、Streamlit、Git/GitHub、Streamlit Cloud 部署、HTTP 基础</textarea>
+
+    <h2>自我评价</h2>
+    <textarea id="summary" rows="3">项目驱动学习，独立完成并上线真实项目，重视效果评估与可溯源；对 Agent 开发有清晰路线（Planning/Memory/Tool Use/Reflection）；两周内完成"API 对话→向量检索 RAG→网页部署上线"全链路。</textarea>
+  </div>
+
+  <div class="panel out-panel">
+    <div class="btns">
+      <button class="green" onclick="copyMd()">复制 Markdown</button>
+      <button onclick="window.print()">打印 / 存 PDF</button>
+      <button class="gray" onclick="resetAll()">清空重填</button>
+    </div>
+    <div class="preview" id="preview"></div>
+
+    <div class="jdcheck">
+      <h2>JD 关键词检查（贴 JD 原文，自动查覆盖）</h2>
+      <textarea id="jdtext" placeholder="把 BOSS直聘/牛客 的 JD 要求文字粘到这里…"></textarea>
+      <button class="orange" onclick="checkJD()">检查覆盖</button>
+      <div id="jdResult"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const KEYWORDS = ["Python","LLM","大模型","RAG","Prompt","提示词","向量","Chroma","Agent","智能体","FastAPI","Streamlit","API","部署","LangChain","SQL","Docker","评估","微调","MCP","知识图谱","GitHub"];
+
+function val(id) { return $(id).value.trim(); }
+
+function buildMd() {
+  const body = (n) => val(n).split("\n").filter(Boolean).map(x => "- " + x).join("\n");
+  return [
+    `# ${val("name") || "姓名"}`,
+    ``,
+    `**求职意向：${val("target")}**`,
+    ``,
+    `电话：${val("phone")} ｜ 邮箱：${val("email")} ｜ ${val("city")} ｜ ${val("grad")} 毕业`,
+    `到岗：${val("start")} ｜ ${val("weeks")} ｜ 英语：${val("english")}`,
+    ``,
+    `---`,
+    ``,
+    `## 教育背景`,
+    ``,
+    `**${val("school")}** · ${val("major")} · ${val("degree")}`,
+    ``,
+    `相关课程：${val("courses")}`,
+    ``,
+    `---`,
+    ``,
+    `## 项目经历`,
+    ``,
+    `### ${val("p1name")}`,
+    ``,
+    `${val("p1tech")}`,
+    ``,
+    body("p1body"),
+    ``,
+    `上线链接：${val("p1link")}`,
+    ``,
+    `### ${val("p2name")}`,
+    ``,
+    `${val("p2tech")}`,
+    ``,
+    body("p2body"),
+    ``,
+    `---`,
+    ``,
+    `## 技能`,
+    ``,
+    body("skills"),
+    ``,
+    `## 自我评价`,
+    ``,
+    body("summary"),
+    ``,
+    `> 简历内容真实可验证。GitHub：${val("github")}`,
+  ].join("\n");
+}
+
+function renderPreview() {
+  const li = (t) => t.split("\n").filter(Boolean).map(x => `<li>${esc(x)}</li>`).join("");
+  $("preview").innerHTML = `
+    <h1>${esc(val("name") || "姓名")}</h1>
+    <div class="contact"><b>求职意向：${esc(val("target"))}</b><br>
+    电话：${esc(val("phone"))} ｜ 邮箱：${esc(val("email"))} ｜ ${esc(val("city"))} ｜ ${esc(val("grad"))} 毕业<br>
+    到岗：${esc(val("start"))} ｜ ${esc(val("weeks"))} ｜ 英语：${esc(val("english"))}</div>
+    <h3>教育背景</h3>
+    <b>${esc(val("school"))}</b> · ${esc(val("major"))} · ${esc(val("degree"))}<br>
+    相关课程：${esc(val("courses"))}
+    <h3>项目经历</h3>
+    <div class="proj"><div class="proj-title">${esc(val("p1name"))}</div>
+    <div class="proj-tech">${esc(val("p1tech"))}</div>
+    <ul>${li(val("p1body"))}</ul>
+    上线链接：${esc(val("p1link"))}</div>
+    <div class="proj"><div class="proj-title">${esc(val("p2name"))}</div>
+    <div class="proj-tech">${esc(val("p2tech"))}</div>
+    <ul>${li(val("p2body"))}</ul></div>
+    <h3>技能</h3><ul>${li(val("skills"))}</ul>
+    <h3>自我评价</h3><ul>${li(val("summary"))}</ul>
+    <div class="tip">GitHub：${esc(val("github"))}</div>`;
+}
+
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function copyMd() {
+  navigator.clipboard.writeText(buildMd()).then(() => alert("已复制 Markdown，可直接粘贴到文档")).catch(() => alert("复制失败，请手动选择"));
+}
+
+function resetAll() {
+  if (!confirm("确定清空所有输入？")) return;
+  document.querySelectorAll("input, textarea").forEach(el => el.value = "");
+  save();
+}
+
+function checkJD() {
+  const jd = val("jdtext");
+  const resume = buildMd().toLowerCase();
+  if (!jd) { $("jdResult").innerHTML = `<div class="tip">先粘贴 JD 原文</div>`; return; }
+  const ok = [], miss = [];
+  KEYWORDS.forEach(k => (resume.includes(k.toLowerCase()) ? ok : miss).push(k));
+  const score = Math.round(ok.length / KEYWORDS.length * 100);
+  $("jdResult").innerHTML =
+    `<div class="score">简历关键词覆盖率：${ok.length}/${KEYWORDS.length}（${score}%）</div>
+     <div>${ok.map(k => `<span class="kw ok">✓ ${k}</span>`).join("")}</div>
+     <div>${miss.map(k => `<span class="kw miss">✗ ${k}</span>`).join("")}</div>
+     <div class="tip">缺失的关键词：优先补进技能或项目描述（只补你真实会用的）。</div>`;
+}
+
+function save() {
+  const ids = ["name","phone","email","city","target","grad","start","weeks","english","github","school","major","degree","courses","p1name","p1tech","p1body","p1link","p2name","p2tech","p2body","skills","summary"];
+  const data = {}; ids.forEach(id => data[id] = $(id).value);
+  localStorage.setItem("resumeData", JSON.stringify(data));
+}
+
+function load() {
+  try {
+    const data = JSON.parse(localStorage.getItem("resumeData") || "{}");
+    Object.keys(data).forEach(id => { if ($(id)) $(id).value = data[id]; });
+  } catch (e) {}
+}
+
+document.querySelectorAll("input, textarea").forEach(el => el.addEventListener("input", () => { save(); renderPreview(); }));
+load();
+renderPreview();
+</script>
+</body>
+</html>

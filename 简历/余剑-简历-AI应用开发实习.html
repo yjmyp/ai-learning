@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>余剑-简历-AI应用开发实习</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #222; margin: 0; background: #eee; }
+  .page { max-width: 800px; margin: 20px auto; background: #fff; padding: 48px 56px; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  h1 { font-size: 26px; margin: 0 0 2px; }
+  .intent { font-size: 15px; color: #0984e3; font-weight: 700; margin-bottom: 8px; }
+  .contact { font-size: 13px; color: #555; line-height: 1.7; margin-bottom: 6px; }
+  .links { font-size: 13px; color: #0984e3; margin-bottom: 18px; }
+  h2 { font-size: 16px; border-bottom: 2px solid #0984e3; padding-bottom: 4px; margin: 22px 0 10px; }
+  .edu { font-size: 14px; line-height: 1.7; }
+  .proj { margin-bottom: 16px; }
+  .proj-title { font-size: 14.5px; font-weight: 700; }
+  .proj-tech { font-size: 12.5px; color: #0984e3; margin: 3px 0 5px; }
+  ul { margin: 4px 0; padding-left: 20px; font-size: 13.5px; line-height: 1.7; }
+  li { margin: 3px 0; }
+  .skills { font-size: 13.5px; line-height: 1.8; }
+  .summary { font-size: 13.5px; line-height: 1.8; }
+  .note { font-size: 12px; color: #888; margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
+  @media print {
+    body { background: #fff; }
+    .page { margin: 0; box-shadow: none; padding: 24px 32px; max-width: none; }
+    button { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <button onclick="window.print()" style="float:right;padding:8px 16px;border:none;border-radius:6px;background:#0984e3;color:#fff;cursor:pointer">打印 / 存 PDF</button>
+  <h1>余剑</h1>
+  <div class="intent">AI 应用开发实习生（完整实现并部署 RAG 应用）｜ 南京优先，可远程</div>
+  <div class="contact">
+    电话：17578999648 ｜ 邮箱：yj2994762833@gmail.com ｜ 南京 ｜ 2027 届本科（2023.09-2027.06）
+  </div>
+  <div class="links">
+    GitHub：https://github.com/yjmyp/ai-learning ｜ 上线项目：https://ai-learning-rkcci4rwsv6aewbthzbvvc.streamlit.app/
+  </div>
+
+  <h2>教育背景</h2>
+  <div class="edu">
+    <b>南京邮电大学</b> · 网络工程 · 本科 · 2027 届<br>
+    相关课程：计算机网络、数据结构、操作系统、数据库原理
+  </div>
+
+  <h2>项目经历</h2>
+  <div class="proj">
+    <div class="proj-title">1. RAG 知识库问答系统（已上线）　2026.07 – 2026.08</div>
+    <div class="proj-tech">Python ｜ sentence-transformers（bge-small-zh-v1.5）｜ Chroma ｜ FastAPI ｜ Streamlit ｜ DeepSeek API</div>
+    <ul>
+      <li>独立设计并实现端到端 RAG 链路：文档解析 → 分层切分（300 字/块、50 字重叠，保留段落语义）→ bge 向量化 → Chroma 持久化向量库 → top-k 召回 → 重排 → LLM 生成带引用来源的回答</li>
+      <li>自建 12 条"问题+标准答案"评估集（扩充中），量化检索质量：top-1/3/5 命中率 75% / 83% / 92%，以数据驱动切分与检索优化</li>
+      <li>设计回答溯源机制：每条回答附引用编号与资料定位，可一键查看原文，保证可验证</li>
+      <li>使用 FastAPI 封装 REST 接口，Streamlit 构建交互界面，部署至 Streamlit Cloud 公开访问；全程 Git 管理、GitHub 开源</li>
+      <li>当前限制（技术债务）：固定切分未语义感知、未做混合检索、评估规模较小；下一版计划：语义切分 + BM25 混合召回 + 评估集扩展</li>
+    </ul>
+  </div>
+  <div class="proj">
+    <div class="proj-title">2. Agent 工具调用 Demo　2026.08</div>
+    <div class="proj-tech">Python ｜ Function Calling ｜ JSON 协议</div>
+    <ul>
+      <li>实现基于 JSON 协议的工具调用链路：模型自主解析任务、决定调用 add/subtract/multiply 工具并返回结构化结果</li>
+      <li>掌握 Agent 核心机制（Tool Use / ReAct 决策循环）；计划 9 月扩展多工具协同与基础状态管理</li>
+    </ul>
+  </div>
+
+  <h2>技能</h2>
+  <div class="skills">
+    语言与基础：Python（熟练）、SQL（基础）、HTTP 协议基础<br>
+    AI 应用开发：大模型 API 调用（DeepSeek）、Prompt 工程、RAG 全链路、向量数据库（Chroma）、Function Calling、检索评估（eval）<br>
+    工程与部署：FastAPI、Streamlit、Git/GitHub、Streamlit Cloud 部署
+  </div>
+
+  <h2>自我评价</h2>
+  <div class="summary">
+    · 专注大语言模型应用落地：独立完成并上线 RAG 问答系统（11 篇资料 → 254 块 → top-3 命中率 83%），重视效果评估与可溯源<br>
+    · 学习路径清晰：正在深入 Agent 开发（工具调用 → 规划 → 记忆 → 反思），对评测工程化方向感兴趣<br>
+    · 项目驱动、执行力强：两周内完成"API 对话 → 向量检索 RAG → 网页部署上线"全链路
+  </div>
+
+  <div class="note">备注：暂无实习经历，以"已上线项目 + 评估数据"作为核心证明；简历内容真实可验证。</div>
+</div>
+</body>
+</html>

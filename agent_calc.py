@@ -1,7 +1,7 @@
 # agent_calc.py —— 会算数的 Agent（AI 提议 -> 程序执行 -> 结果回填）
 import json
-import re
 import requests
+from agent_tool_guard import TOOL_SCHEMAS, safe_call
 
 try:
     from local_key import API_KEY
@@ -37,7 +37,8 @@ SYSTEM = """你是一个会使用工具的计算助手。你有以下工具：
 - multiply(a, b)：乘法
 - subtract(a, b)：减法
 
-规则：如果需要计算，必须只输出一行 JSON：{"tool": "工具名", "args": [参数列表]}
+规则：如果需要计算，必须只输出一行 JSON：{"tool": "工具名", "args": {"参数名": 值}}
+例如：{"tool": "add", "args": {"a": 1, "b": 2}}
 如果不需要工具，直接正常回答。
 """
 
@@ -53,6 +54,15 @@ def call_llm(messages):
     return r.json()["choices"][0]["message"]["content"]
 
 
+def extract_json(reply):
+    """把回复里第一个 { 到最后一个 } 之间的内容取出来（支持嵌套括号）。"""
+    start = reply.find("{")
+    end = reply.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return reply[start:end + 1]
+
+
 def run_agent(question):
     messages = [
         {"role": "system", "content": SYSTEM},
@@ -60,12 +70,21 @@ def run_agent(question):
     ]
     for _ in range(5):
         reply = call_llm(messages)
-        m = re.search(r'\{[^}]*"tool"[^}]*\}', reply)
-        if m:
-            call = json.loads(m.group(0))
-            tool_name = call["tool"]
-            args = call["args"]
-            result = TOOLS[tool_name](*args)
+        print(f"[debug] 模型输出: {reply}")
+        raw = extract_json(reply)
+        if raw:
+            try:
+                call = json.loads(raw)
+            except json.JSONDecodeError:
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": "你输出的 JSON 无法解析，请只输出一行合法 JSON：{\"tool\": \"工具名\", \"args\": {\"参数名\": 值}}"})
+                continue
+            resp = safe_call(TOOLS, TOOL_SCHEMAS, call.get("tool"), call.get("args"))
+            if not resp["ok"]:
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": f"工具调用失败：{resp['error']}，请修正后重试。args 必须是带参数名的对象，例如 {{\"a\": 1, \"b\": 2}}"})
+                continue
+            result = resp["result"]
             messages.append({"role": "assistant", "content": reply})
             messages.append({"role": "user", "content": f"工具返回结果：{result}，请根据结果回答用户"})
         else:

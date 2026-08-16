@@ -3,6 +3,11 @@
 import os
 import tempfile
 
+# 离线优先：避免受限网络下 HuggingFace/Chroma 联网卡死（本地模型已缓存）
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE_DIR)
 

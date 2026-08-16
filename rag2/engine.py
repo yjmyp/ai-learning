@@ -6,7 +6,7 @@ import time
 from chunker import chunk_text
 from config import (
     CHROMA_DIR, CHUNK_OVERLAP, CHUNK_SIZE, COLLECTION_NAME,
-    DOCS_DIRS, get_api_key,
+    DOCS_DIRS, EMBED_MODEL, get_api_key,
 )
 from embedder import Embedder
 from loader import load_documents
@@ -35,6 +35,7 @@ class RAGEngine:
 
     def _build(self):
         docs = load_documents(DOCS_DIRS)
+        print(f"[rag2] 解析到 {len(docs)} 篇资料", flush=True)
         chunks = []
         for d in docs:
             chunks.extend(
@@ -42,6 +43,7 @@ class RAGEngine:
             )
         if not chunks:
             raise RuntimeError("没有找到可入库的资料，请检查 DOCS_DIRS")
+        print(f"[rag2] 切分成 {len(chunks)} 块（{CHUNK_SIZE}字/块，重叠 {CHUNK_OVERLAP}）", flush=True)
 
         ids, texts, metas = [], [], []
         for i, c in enumerate(chunks):
@@ -50,7 +52,9 @@ class RAGEngine:
             metas.append({"source": c["source"]})
 
         t0 = time.time()
+        print(f"[rag2] 向量化中（模型 {EMBED_MODEL}，离线缓存）...", flush=True)
         embeddings = self.embedder.encode(texts)
+        print("[rag2] 向量化完成，写入 Chroma ...", flush=True)
         self.store.reset()
         self.store.add(ids, texts, metas, embeddings)
         print(f"[rag2] 入库完成：{len(chunks)} 块 / {len(docs)} 篇 "
