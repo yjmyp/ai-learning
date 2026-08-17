@@ -1,0 +1,3 @@
+date,company,job_title,job_url,blocker_category,what_happened,why_blocked,can_retry,next_retry_strategy,user_action_needed,status
+2026-08-17,萌想科技,AI工程应用/AI系统/AI研发,待搜索,投前确认,岗位 5/20 刷新过,无法确认仍在招,是,8/18 实习僧/BOSS 搜索确认,用户搜索确认后决定投或不投,Pending
+2026-08-17,硅基智能,大模型应用,待搜索,投前确认,公开渠道搜不到明确 AI 应用开发实习岗,JD 不确定,是,8/18 BOSS 搜一次,搜到就投没有就跳过,Pending

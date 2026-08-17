@@ -6,3 +6,4 @@ __pycache__/
 .env
 local_key.py
 rag2/data/
+求职投递/candidate_profile.json
