@@ -3,9 +3,11 @@
 import os
 import tempfile
 
-# 离线优先：避免受限网络下 HuggingFace/Chroma 联网卡死（本地模型已缓存）
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+# 离线优先：仅本地环境启用（避免受限网络下 HuggingFace/Chroma 联网卡死）
+# Streamlit Cloud 上 /mount/src 存在 → 不设离线，允许联网下载模型
+if not os.path.exists("/mount/src"):
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
