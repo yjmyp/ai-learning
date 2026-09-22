@@ -60,8 +60,8 @@ class RAGEngine:
         print(f"[rag2] 入库完成：{len(chunks)} 块 / {len(docs)} 篇 "
               f"/ 耗时 {time.time() - t0:.1f}s")
 
-    def retrieve(self, question, top_k=4, use_rerank=True):
-        return self.retriever.retrieve(question, top_k, use_rerank)
+    def retrieve(self, question, top_k=4, use_rerank=True, use_bm25=True):
+        return self.retriever.retrieve(question, top_k, use_rerank, use_bm25)
 
     def ask(self, question, top_k=4, use_rerank=True, api_key=None):
         """完整问答：检索 + 生成，返回回答与来源"""

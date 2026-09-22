@@ -18,6 +18,10 @@ class VectorStore:
     def count(self):
         return self.collection.count()
 
+    def get_all(self):
+        """取回全部文档（构建 BM25 关键词索引用）。"""
+        return self.collection.get(include=["documents", "metadatas"])
+
     def add(self, ids, texts, metadatas, embeddings):
         self.collection.add(
             ids=ids,

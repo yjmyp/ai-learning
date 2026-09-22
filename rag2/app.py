@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """RAG v2 网页版：streamlit run rag2/app.py"""
+import os
+
 import streamlit as st
 
 from config import CHUNK_OVERLAP, CHUNK_SIZE, DEFAULT_TOP_K, EMBED_MODEL, LLM_MODEL, get_api_key
@@ -7,6 +9,24 @@ from engine import get_engine
 from qa import ask_deepseek
 
 st.set_page_config(page_title="AI 学习知识库 v2", page_icon="📚", layout="wide")
+
+# ===== 访问密码门：防止公开部署被陌生人刷 API key（上次烧钱 31 元的教训）=====
+# 密码从 Streamlit Cloud secrets 或环境变量读取，不写死在代码里
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") or os.environ.get("APP_PASSWORD", "")
+
+if APP_PASSWORD:
+    if "unlocked" not in st.session_state:
+        st.session_state.unlocked = False
+    if not st.session_state.unlocked:
+        st.title("🔒 此应用需要访问密码")
+        pwd = st.text_input("请输入访问密码", type="password")
+        if st.button("进入"):
+            if pwd == APP_PASSWORD:
+                st.session_state.unlocked = True
+                st.rerun()
+            else:
+                st.error("密码错误，请重试")
+        st.stop()
 
 
 @st.cache_resource(show_spinner="加载知识库（首次会构建索引）...")

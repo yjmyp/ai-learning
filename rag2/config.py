@@ -39,6 +39,8 @@ LLM_URL = "https://api.deepseek.com/chat/completions"
 # 检索
 DEFAULT_TOP_K = 4
 RERANK_TOP_K = 8      # 先召回更多候选，再重排取前 top_k
+HYBRID_TOPK = 20      # 混合检索：向量和 BM25 各取前 20 再融合
+BM25_WEIGHT = 0.3     # 混合权重：总分 = (1-w)*向量 + w*BM25（w=0.3 即 0.7:0.3）
 
 
 def get_api_key():

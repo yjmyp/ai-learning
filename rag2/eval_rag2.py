@@ -25,14 +25,15 @@ def _hit(chunk, item):
     return item["source"] in src and item["kw"] in text
 
 
-def main():
+def run(mode="hybrid"):
     engine = get_engine()
     n = len(EVAL_SET)
-    print(f"评估集：{n} 条 | 向量库：{engine.store.count()} 块 | 召回 top-5 + 重排")
+    label = "向量 + BM25 混合" if mode == "hybrid" else "纯向量"
+    print(f"[{label}] 评估集：{n} 条 | 向量库：{engine.store.count()} 块 | top-5 + 重排")
     stats = {1: 0, 3: 0, 5: 0}
     misses = []
     for item in EVAL_SET:
-        chunks = engine.retrieve(item["q"], top_k=5, use_rerank=True)
+        chunks = engine.retrieve(item["q"], top_k=5, use_rerank=True, use_bm25=(mode == "hybrid"))
         hit_idx = [i for i, c in enumerate(chunks) if _hit(c, item)]
         top1 = 1 in [i + 1 for i in hit_idx if i == 0]
         top3 = any(i < 3 for i in hit_idx)
@@ -46,12 +47,26 @@ def main():
         if not top5:
             misses.append(item["q"])
 
-    print("\n===== 命中率基线 =====")
+    print(f"\n===== 命中率（{label}） =====")
     for k in (1, 3, 5):
         print(f"  top-{k}: {stats[k]}/{n} = {stats[k] / n * 100:.0f}%")
     if misses:
         print("top-5 未命中：", misses)
-    print("\n（优化方向：切分策略 / top_k / 重排 / 混合检索，每次改完重跑本脚本对比）")
+    print()
+    return stats
+
+
+def main():
+    print("=" * 40)
+    base = run("base")
+    print("=" * 40)
+    hybrid = run("hybrid")
+    print("=" * 40)
+    print("\n===== 对比（hybrid - base） =====")
+    for k in (1, 3, 5):
+        diff = hybrid[k] - base[k]
+        print(f"  top-{k}: {base[k]} → {hybrid[k]}（{'+' if diff >= 0 else ''}{diff}）")
+    print("\n结论看这里：混合检索是否提升了命中率，尤其'什么是 Agent？'那条。")
 
 
 if __name__ == "__main__":

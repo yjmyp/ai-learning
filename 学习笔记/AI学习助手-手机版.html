@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="mobile-web-app-capable" content="yes">
+<title>AI 学习助手（手机版）</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #0b1220;
+    color: #e2e8f0;
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    padding-bottom: 86px;
+  }
+  .app-header {
+    position: sticky; top: 0; z-index: 20;
+    background: linear-gradient(135deg, #111c33 0%, #0b1220 100%);
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .title { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  .badge {
+    font-size: 12px; font-weight: 500; color: #7dd3fc;
+    background: #0c4a6e33; border: 1px solid #0ea5e955;
+    border-radius: 999px; padding: 2px 8px; margin-left: 6px;
+  }
+  .one-line { margin-top: 10px; }
+  .one-line label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+  .one-line input {
+    width: 100%; background: #16223a; color: #f1f5f9;
+    border: 1px solid #334155; border-radius: 10px;
+    padding: 10px 12px; font-size: 15px; outline: none;
+  }
+  .one-line input:focus { border-color: #38bdf8; }
+
+  main { padding: 12px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .card {
+    background: #131c31; border: 1px solid #1e293b;
+    border-radius: 14px; padding: 14px; margin-bottom: 12px;
+  }
+  .card h2 { margin: 0 0 10px; font-size: 16px; color: #7dd3fc; }
+  .card h3 { margin: 12px 0 6px; font-size: 14px; color: #f1f5f9; }
+  .muted { color: #94a3b8; font-size: 13px; }
+
+  .stage { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px dashed #1e293b; }
+  .stage:last-child { border-bottom: none; }
+  .stage .no { flex: none; width: 26px; height: 26px; border-radius: 8px; background: #1e3a5f; color: #93c5fd; font-size: 13px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  .stage .body { flex: 1; }
+  .stage .name { font-size: 14px; font-weight: 600; }
+  .stage .desc { font-size: 12.5px; color: #94a3b8; margin-top: 2px; line-height: 1.5; }
+  .dot { display: inline-block; margin-right: 4px; }
+
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .flow span {
+    background: #16223a; border: 1px solid #334155; border-radius: 8px;
+    padding: 4px 8px; font-size: 12px; color: #cbd5e1;
+  }
+  .flow span.done { border-color: #22c55e66; color: #86efac; }
+
+  details { background: #16223a; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  details summary { cursor: pointer; font-size: 14px; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 8px; }
+  details summary::before { content: "▸"; color: #38bdf8; transition: transform .15s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  details .ans { margin-top: 8px; font-size: 13px; color: #cbd5e1; line-height: 1.65; }
+
+  .quiz-box { text-align: center; padding: 18px 14px; }
+  .quiz-q { font-size: 16px; font-weight: 600; min-height: 24px; line-height: 1.5; }
+  .quiz-a { display: none; margin-top: 10px; font-size: 14px; color: #a5f3fc; background: #0c4a6e22; border: 1px solid #0ea5e955; border-radius: 10px; padding: 10px; line-height: 1.65; text-align: left; }
+  .quiz-a.show { display: block; }
+  .btn-row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
+  button.btn {
+    background: #0ea5e9; color: #082f49; border: none; border-radius: 10px;
+    padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  button.btn.ghost { background: #1e293b; color: #cbd5e1; }
+  button.btn.warn { background: #f59e0b; color: #451a03; }
+
+  .qa-item { margin-bottom: 8px; }
+  .qa-item .q { font-size: 13.5px; font-weight: 600; color: #f1f5f9; }
+  .qa-item .a { font-size: 12.5px; color: #94a3b8; line-height: 1.6; margin-top: 3px; }
+
+  .check-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed #1e293b; }
+  .check-item:last-child { border-bottom: none; }
+  .check-item input { width: 20px; height: 20px; accent-color: #22c55e; }
+  .check-item label { font-size: 14px; flex: 1; }
+  .check-item.done label { color: #64748b; text-decoration: line-through; }
+
+  .links { display: grid; gap: 8px; }
+  .links a {
+    display: flex; align-items: center; gap: 8px; text-decoration: none;
+    background: #16223a; border: 1px solid #334155; border-radius: 10px;
+    padding: 11px 12px; color: #e2e8f0; font-size: 14px;
+  }
+  .links a:active { background: #1e293b; }
+
+  .anx-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .anx-row input { background: #16223a; border: 1px solid #334155; border-radius: 8px; padding: 8px 10px; color: #f1f5f9; font-size: 13px; outline: none; }
+  .anx-list-item { background: #16223a; border: 1px solid #1e293b; border-radius: 10px; padding: 10px; margin-bottom: 8px; font-size: 12.5px; }
+  .anx-list-item .f { color: #f1f5f9; }
+  .anx-list-item .i { color: #fbbf24; margin-top: 3px; }
+  .anx-del { float: right; background: none; border: none; color: #64748b; font-size: 16px; cursor: pointer; }
+
+  .rule { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px dashed #1e293b; font-size: 13.5px; }
+  .rule:last-child { border-bottom: none; }
+  .rule .n { flex: none; color: #f59e0b; font-weight: 700; }
+  .rule .t { line-height: 1.6; }
+
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 480px; z-index: 30;
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    background: rgba(11, 18, 32, .95); backdrop-filter: blur(8px);
+    border-top: 1px solid #1e293b; padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav button {
+    background: none; border: none; color: #64748b; font-size: 11px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 4px 0; cursor: pointer;
+  }
+  .bottom-nav button .ico { font-size: 19px; }
+  .bottom-nav button.active { color: #38bdf8; }
+
+  .foot { text-align: center; color: #475569; font-size: 11px; padding: 12px 0 6px; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="title">AI 学习助手 <span class="badge">手机版</span></div>
+  <div class="one-line">
+    <label>今日一条线（只做这一件，达到即停）</label>
+    <input id="todayLine" placeholder="例：跑通 BM25 eval" autocomplete="off">
+  </div>
+</header>
+
+<main>
+
+  <!-- 学习地图 -->
+  <section id="tab-map" class="tab-panel active">
+    <div class="card">
+      <h2>🗺️ 九阶段学习地图</h2>
+      <div class="stage"><div class="no">1</div><div class="body"><div class="name"><span class="dot">🟡</span>Python 基础</div><div class="desc">语法/数据结构/OOP 会；装饰器、异步弱</div></div></div>
+      <div class="stage"><div class="no">2</div><div class="body"><div class="name"><span class="dot">🟡</span>大模型基础</div><div class="desc">会用 API；Transformer/Embedding 理解级（不啃公式）</div></div></div>
+      <div class="stage"><div class="no">3</div><div class="body"><div class="name"><span class="dot">🟢</span>LLM 应用开发</div><div class="desc">Prompt / 结构化输出 / Function Calling / RAG / 多轮对话</div></div></div>
+      <div class="stage"><div class="no">4</div><div class="body"><div class="name"><span class="dot">🟢</span>RAG 知识库</div><div class="desc">v1 已上线；rag2 254 块，eval 基线 top-3 83%</div></div></div>
+      <div class="stage"><div class="no">5</div><div class="body"><div class="name"><span class="dot">🟡</span>Agent 核心</div><div class="desc">工具调用会（agent_calc + 守卫）；规划/记忆/反思未做</div></div></div>
+      <div class="stage"><div class="no">6</div><div class="body"><div class="name"><span class="dot">🔴</span>框架</div><div class="desc">LangChain / LlamaIndex 未学（会读会用级即可）</div></div></div>
+      <div class="stage"><div class="no">7</div><div class="body"><div class="name"><span class="dot">🔴</span>模型部署</div><div class="desc">Ollama / Docker（加分项）</div></div></div>
+      <div class="stage"><div class="no">8</div><div class="body"><div class="name"><span class="dot">🟢</span>两个项目</div><div class="desc">项目1 RAG 已上线；🔴 项目2 行业调研 Agent 未做</div></div></div>
+      <div class="stage"><div class="no">9</div><div class="body"><div class="name"><span class="dot">🔴</span>刷题</div><div class="desc">1 / 40 题；每周 3 题 + 面试 5 问</div></div></div>
+    </div>
+
+    <div class="card">
+      <h2>🔬 当前代码学习线（8/17 起）</h2>
+      <p class="muted">一次只学一个文件，说"学了"才算过。</p>
+      <div class="flow">
+        <span class="done">chunker ✅</span>
+        <span>embedder</span>
+        <span>store</span>
+        <span>retriever ⚠️ 学完才能动 BM25</span>
+        <span>reranker</span>
+        <span>qa</span>
+        <span>engine</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📅 阶段时间线</h2>
+      <div class="qa-item"><div class="q">阶段 A：RAG 重构 v2（8/16-8/20）</div><div class="a">跑通 ✅ → eval 基线 ✅ → BM25 混合检索 ⏳ → FastAPI/网页版 → 部署</div></div>
+      <div class="qa-item"><div class="q">阶段 B：Agent 项目 2（8/21-9/5）</div><div class="a">ReAct → 记忆 → 工具 → 反思 → 框架对照 → 行业调研 Agent 上线</div></div>
+      <div class="qa-item"><div class="q">阶段 C：打磨冲刺（9/6-9/15）</div><div class="a">简历 v2 / 面试 50 问 / 场景题 10 道 / 博客 / 40 题</div></div>
+      <div class="qa-item"><div class="q">阶段 D：投递面试（9/16+）</div><div class="a">每周 5-10 家 + 秋招网申并行 + 每场复盘</div></div>
+    </div>
+
+    <div class="card">
+      <h2>🚪 投递门禁（四条全过才算"能投"）</h2>
+      <div class="qa-item"><div class="q">① 简历</div><div class="a">STAR + 数字 + 上线链接 + GitHub —— ✅ 已达标</div></div>
+      <div class="qa-item"><div class="q">② 项目可演示</div><div class="a">rag2 可跑/可访问 —— ✅ 已达标（待 BM25 验证）</div></div>
+      <div class="qa-item"><div class="q">③ 脱稿讲 10 分钟</div><div class="a">⏳ 需要练</div></div>
+      <div class="qa-item"><div class="q">④ 高频 3 问</div><div class="a">为什么 bge / 怎么切分 / 检索失败怎么办 —— ⏳ 背熟</div></div>
+    </div>
+  </section>
+
+  <!-- 概念速查 -->
+  <section id="tab-glossary" class="tab-panel">
+    <div class="card quiz-box">
+      <h2>🎲 随机抽问自测</h2>
+      <div class="quiz-q" id="quizQ">点"抽一题"开始</div>
+      <div class="quiz-a" id="quizA"></div>
+      <div class="btn-row">
+        <button class="btn warn" id="quizNew">🎲 抽一题</button>
+        <button class="btn ghost" id="quizReveal">👀 看答案</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📖 概念速查（点开看）</h2>
+      <details><summary>Token</summary><div class="ans">文本最小处理单位，英文≈单词、中文≈字/词。上下文窗口按 token 计（DeepSeek 约 12 万）。</div></details>
+      <details><summary>Prompt</summary><div class="ans">给模型的指令。技巧：角色 + 示例 + 输出格式约束。chat.py 里就是 messages 数组。</div></details>
+      <details><summary>上下文窗口</summary><div class="ans">模型一次能接收的最大 token 数，超出会截断。所以 RAG 要先检索精选，不能全塞。</div></details>
+      <details><summary>Embedding</summary><div class="ans">把文本变成向量，语义相近则距离近。rag2 用 bge-small-zh-v1.5，encode 后归一化。</div></details>
+      <details><summary>余弦相似度</summary><div class="ans">向量夹角越小越像。Chroma 返回的是距离，rag2 里用 1 - 距离 转成相似度。</div></details>
+      <details><summary>RAG</summary><div class="ans">检索增强生成：先查资料再回答。流程 = 切块 → 向量化 → 入库 → 检索 → 拼 Prompt → 生成带引用。</div></details>
+      <details><summary>BM25</summary><div class="ans">关键词检索算法：词频有上限（k1 饱和）+ 稀有词权重大（IDF）+ 长度归一化（b）。中文按相邻双字切词。</div></details>
+      <details><summary>混合检索</summary><div class="ans">向量管语义、BM25 管词面精确，双路召回再融合。rag2 权重 0.7 向量 + 0.3 BM25，用 min-max 归一化对齐。</div></details>
+      <details><summary>Chroma</summary><div class="ans">本地持久化向量库。add 存四样：id / texts / metadatas / embeddings；query 按余弦距离取最近。</div></details>
+      <details><summary>向量数据库</summary><div class="ans">存向量的库：Chroma / FAISS / Milvus / Qdrant。小项目 Chroma，生产可换 Milvus。</div></details>
+      <details><summary>Agent</summary><div class="ans">大模型 + 规划 + 工具 + 记忆，能自主完成任务。核心循环 = 思考 → 调用工具 → 看结果 → 再思考。</div></details>
+      <details><summary>ReAct</summary><div class="ans">Reasoning + Acting 循环：先推理下一步，再行动（调工具），观察结果后继续。agent_calc.py 就是这个。</div></details>
+      <details><summary>Function Calling / Tool Calling</summary><div class="ans">让模型按 JSON Schema 输出结构化调用。agent_tool_guard.py 校验 5 类坏输出：未知工具/缺参/类型错/非对象/非法 JSON。</div></details>
+      <details><summary>Memory（记忆）</summary><div class="ans">短期记忆 = 对话上下文；长期记忆 = 向量库存历史。项目 2 要做的部分。</div></details>
+      <details><summary>MCP</summary><div class="ans">模型上下文协议：统一工具/数据怎么接入模型的标准，JD 高频词，了解级即可。</div></details>
+      <details><summary>LangChain / LangGraph</summary><div class="ans">Agent 开发框架。策略：自研循环为主，框架只做对照讲选型，不深耕。</div></details>
+      <details><summary>Rerank（重排）</summary><div class="ans">召回 top-k 后再精排。rag2 用 TF-IDF 字符重排，把向量候选重新打分排序。</div></details>
+      <details><summary>评估集 / Eval</summary><div class="ans">问题 + 期望命中资料，算 top-k 命中率。12 条基线：top-1 75% / top-3 83% / top-5 92%（251 块时测）。</div></details>
+    </div>
+  </section>
+
+  <!-- 面试 -->
+  <section id="tab-interview" class="tab-panel">
+    <div class="card">
+      <h2>🎤 高频 3 问（门禁必背）</h2>
+      <div class="qa-item"><div class="q">为什么用 bge 而不是别的模型？</div><div class="a">中文检索效果好 + 本地缓存不联网 + 数据量（254 块）小模型够用；超过 1 万条再换 bge-large。</div></div>
+      <div class="qa-item"><div class="q">你的文本怎么切分？</div><div class="a">300 字/块 + 50 字重叠，段落感知滑动窗口；下一版计划做语义切分（按句子嵌入相似度断点）。</div></div>
+      <div class="qa-item"><div class="q">检索失败怎么办？</div><div class="a">已做：向量 + BM25 混合召回 + 重排；待做：相似度低于阈值就拒答，不硬答。</div></div>
+    </div>
+
+    <div class="card">
+      <h2>🔥 必杀题 5 道（参考要点，自己组织语言）</h2>
+      <div class="qa-item"><div class="q">1. 为什么 bge-small 而不是 m3e？</div><div class="a">MTEB 中文检索里 bge-small 速度/精度平衡，和我的数据规模匹配；规模超 1 万条会换 bge-large 并降采样。</div></div>
+      <div class="qa-item"><div class="q">2. Chroma 挂了怎么办？</div><div class="a">本地持久化 + 定期备份 collection；生产环境加副本，当前 Demo 单机够用。</div></div>
+      <div class="qa-item"><div class="q">3. 切分切断重要实体怎么办？</div><div class="a">目前段落感知滑动窗口缓解；下一版按句子嵌入相似度做语义切分。</div></div>
+      <div class="qa-item"><div class="q">4. 你的生成幻觉率是多少？</div><div class="a">未系统评测，但做了引用溯源可人工校验；后续用 Ragas 跑 faithfulness 指标。</div></div>
+      <div class="qa-item"><div class="q">5. top-3 全错怎么办？</div><div class="a">阈值过滤（相似度低于 0.7 拒答），当前是待优化点——主动暴露短板比被问穿安全。</div></div>
+    </div>
+
+    <div class="card">
+      <h2>🧩 场景题 10 方向（9 月前练）</h2>
+      <div class="muted">RAG 并发 / 向量库迁移 / 知识库更新 / JSON 输出不稳定 / 工具选错纠偏 / 流式输出引用 / 拒答策略 / 延迟测量 / 上下文压缩 / 线上指标下跌排查。</div>
+    </div>
+
+    <div class="card">
+      <h2>💬 灵魂问题</h2>
+      <div class="qa-item"><div class="q">有了 Claude Code 为什么还自己写 Agent？</div><div class="a">理解原理才能选型、排错、讲清 trade-off；项目是自己写的才能扛住追问。面试官要的是深度不是工具名。</div></div>
+    </div>
+  </section>
+
+  <!-- 学习守则 -->
+  <section id="tab-rules" class="tab-panel">
+    <div class="card">
+      <h2>📜 学习守则 v1（每天读一遍）</h2>
+      <div class="rule"><span class="n">1</span><span class="t">计划冻结 v4.4，每天最多改 1 次（须有新信息）；思考/讨论每天 ≤30 分钟。</span></div>
+      <div class="rule"><span class="n">2</span><span class="t">60 分先上：先写完成定义，达到即停；同一产出最多改 2 版。</span></div>
+      <div class="rule"><span class="n">3</span><span class="t">单线程：一次一个文件/一件事；想换话题先交卡点或完成证据。</span></div>
+      <div class="rule"><span class="n">4</span><span class="t">你写我审：核心代码自己写，AI 只 review/提问；学完必做改动实验。</span></div>
+      <div class="rule"><span class="n">5</span><span class="t">事实代替想象：焦虑写进焦虑箱（一行事实 + 一行想象），禁用"感觉完了/慢了"。</span></div>
+    </div>
+
+    <div class="card">
+      <h2>✅ 完成证据（每天至少交 1 个）</h2>
+      <div class="muted">三句话讲透一个概念 · 自己写/改的代码段 · 改动实验输出对比 · 投递/面试真实记录</div>
+    </div>
+
+    <div class="card">
+      <h2>📦 焦虑箱</h2>
+      <div class="anx-row">
+        <input id="anxFact" placeholder="一行事实" autocomplete="off">
+        <input id="anxImag" placeholder="一行想象" autocomplete="off">
+      </div>
+      <button class="btn" id="anxAdd" style="width:100%">写进去，就不许再想</button>
+      <div id="anxList" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <!-- 打卡与资源 -->
+  <section id="tab-check" class="tab-panel">
+    <div class="card">
+      <h2>📋 每日清单</h2>
+      <div id="checkList"></div>
+      <button class="btn ghost" id="checkReset" style="width:100%;margin-top:10px">↺ 重置今日清单</button>
+    </div>
+
+    <div class="card">
+      <h2>🔗 资源直达</h2>
+      <div class="links">
+        <a href="https://datawhalechina.github.io/llm-universe/#/" target="_blank" rel="noopener">📘 Datawhale《动手学大模型应用开发》</a>
+        <a href="https://datawhalechina.github.io/hello-agents/" target="_blank" rel="noopener">🤖 Datawhale《从零开始构建智能体》</a>
+        <a href="https://ai-learning-rkcci4rwsv6aewbthzbvvc.streamlit.app/" target="_blank" rel="noopener">🚀 我自己的 RAG 问答（已上线）</a>
+        <a href="https://github.com/yjmyp/ai-learning" target="_blank" rel="noopener">🐙 我的 GitHub 仓库</a>
+        <a href="https://www.nowcoder.com/jobs/detail/390472" target="_blank" rel="noopener">💼 Calix 凯易讯 AI 实习（8/18 必投）</a>
+      </div>
+    </div>
+
+    <div class="foot">数据只存在本机浏览器，断网可用 · 学习守则执行版</div>
+  </section>
+
+</main>
+
+<nav class="bottom-nav">
+  <button data-tab="tab-map" class="active"><span class="ico">🗺️</span>地图</button>
+  <button data-tab="tab-glossary"><span class="ico">📖</span>概念</button>
+  <button data-tab="tab-interview"><span class="ico">🎤</span>面试</button>
+  <button data-tab="tab-rules"><span class="ico">📜</span>守则</button>
+  <button data-tab="tab-check"><span class="ico">✅</span>打卡</button>
+</nav>
+
+<script>
+const store = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v === null || v === undefined ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+
+// 今日一条线
+const lineInput = document.getElementById('todayLine');
+lineInput.value = store.get('line', '');
+lineInput.addEventListener('input', () => store.set('line', lineInput.value));
+
+// 底部导航
+document.querySelectorAll('.bottom-nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// 随机抽问
+const QUIZ = [
+  { q: '什么是 RAG？流程是什么？', a: '检索增强生成：先查资料再回答。切块 → 向量化 → 入库 → 检索 top-k → 拼 Prompt → 生成带引用。' },
+  { q: '为什么向量相近 = 语义相近？', a: 'Embedding 把文本映射到向量空间，训练目标就是让语义相近的文本距离近（比如"苹果"和"水果"）。' },
+  { q: 'BM25 和向量检索各管什么？', a: 'BM25 管词面精确命中（关键词），向量管语义相近。混合检索两个都要，rag2 权重 0.7 向量 + 0.3 BM25。' },
+  { q: 'Chroma add 存了哪四样？', a: 'id（唯一标识）、texts（原文）、metadatas（来源等）、embeddings（向量）。query 按余弦距离取最近。' },
+  { q: '为什么切分要重叠 50 字？', a: '避免一句话/一个概念刚好被切在边界断开，重叠让上下文能跨块延续。' },
+  { q: 'Agent 的核心循环是什么？', a: '思考 → 调用工具 → 观察结果 → 再思考。agent_calc.py 里就是让模型输出 JSON 调 add/subtract。' },
+  { q: '守卫挡哪 5 类坏输出？', a: '未知工具 / 缺必填参数 / 参数类型错 / 参数不是对象 / 非法 JSON。' },
+  { q: 'Rerank 是什么？', a: '召回后再精排：先把候选多取一些（8 个），用 TF-IDF 字符重排打分，再取前 4。' },
+  { q: '上下文窗口满了怎么办？', a: '截断或压缩。RAG 的意义就是只把最相关的几块拼进去，而不是全量塞。' },
+  { q: '你 eval 基线的数字是多少？', a: '12 条评估集（251 块时）：top-1 75% / top-3 83% / top-5 92%。唯一全空的是"什么是 Agent？"。' }
+];
+let qi = 0;
+function showQuiz() {
+  document.getElementById('quizQ').textContent = QUIZ[qi].q;
+  const a = document.getElementById('quizA');
+  a.textContent = QUIZ[qi].a;
+  a.classList.remove('show');
+}
+document.getElementById('quizNew').addEventListener('click', () => {
+  qi = Math.floor(Math.random() * QUIZ.length);
+  showQuiz();
+});
+document.getElementById('quizReveal').addEventListener('click', () => {
+  document.getElementById('quizA').classList.add('show');
+});
+showQuiz();
+
+// 每日清单
+const ITEMS = ['读守则一遍', '说出今天一条线', '执行动作（跑代码/写代码/投递）', '三句话讲透一个概念', '改动实验：改参数→预测→跑→对比', '更新进度日志'];
+const checkEl = document.getElementById('checkList');
+function renderCheck() {
+  const state = store.get('check', {});
+  checkEl.innerHTML = '';
+  ITEMS.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'check-item' + (state[i] ? ' done' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!state[i];
+    cb.addEventListener('change', () => {
+      state[i] = cb.checked;
+      store.set('check', state);
+      div.classList.toggle('done', cb.checked);
+    });
+    const label = document.createElement('label');
+    label.textContent = t;
+    div.appendChild(cb);
+    div.appendChild(label);
+    checkEl.appendChild(div);
+  });
+}
+document.getElementById('checkReset').addEventListener('click', () => {
+  store.set('check', {});
+  renderCheck();
+});
+renderCheck();
+
+// 焦虑箱
+const anxList = store.get('anx', []);
+function renderAnx() {
+  const el = document.getElementById('anxList');
+  el.innerHTML = '';
+  anxList.forEach((row, idx) => {
+    const div = document.createElement('div');
+    div.className = 'anx-list-item';
+    const del = document.createElement('button');
+    del.className = 'anx-del';
+    del.textContent = '✕';
+    del.addEventListener('click', () => { anxList.splice(idx, 1); store.set('anx', anxList); renderAnx(); });
+    div.appendChild(del);
+    const f = document.createElement('div');
+    f.className = 'f';
+    f.textContent = '事实：' + row.f;
+    const i = document.createElement('div');
+    i.className = 'i';
+    i.textContent = '想象：' + row.i;
+    div.appendChild(f);
+    div.appendChild(i);
+    el.appendChild(div);
+  });
+}
+document.getElementById('anxAdd').addEventListener('click', () => {
+  const f = document.getElementById('anxFact').value.trim();
+  const i = document.getElementById('anxImag').value.trim();
+  if (!f && !i) return;
+  anxList.unshift({ f: f || '（未填）', i: i || '（未填）' });
+  store.set('anx', anxList);
+  document.getElementById('anxFact').value = '';
+  document.getElementById('anxImag').value = '';
+  renderAnx();
+});
+renderAnx();
+</script>
+</body>
+</html>
