@@ -77,6 +77,7 @@ import job_detail  # noqa: E402  岗位档案与筛选依据
 import doc_io  # noqa: E402  文档/图片读取（PDF / Word / 图片 OCR）
 import resume_builder  # noqa: E402  问答式生成简历
 import resume_clean  # noqa: E402  简历文本清洗（剔除本地路径 / 编码乱码）
+import resume_templates  # noqa: E402  简历排版模板（classic / sidebar / compact）
 
 REPORTS_DIR = DATA_DIR / "reports"
 
@@ -1711,27 +1712,8 @@ def page_settings():
     st.caption("部署到 Streamlit Cloud：Settings → Secrets 填入 "
                "`DEEPSEEK_API_KEY = \"sk-...\"` 即可。")
     st.markdown("---")
-    st.markdown("##### 🖼 名片照片 / 分享链接")
-    st.caption("照片显示在公开名片页（?twin=1）。本机上传后，把它提交到 GitHub，"
-               "云端名片也会自动带上。")
-    _av = find_avatar()
-    ac1, ac2 = st.columns([1, 2], vertical_alignment="center")
-    with ac1:
-        if _av:
-            st.image(str(_av), width=120, caption=f"当前照片：{_av.name}")
-        else:
-            st.caption("还没有照片（名片页会显示「余」字占位）")
-    with ac2:
-        up_img = st.file_uploader("上传照片（jpg / png / webp）",
-                                  type=["jpg", "jpeg", "png", "webp"], key="avatar_up")
-        if up_img is not None and st.button("保存这张照片", key="avatar_save"):
-            dst = BASE_DIR.parent / "简历" / "照片.jpg"
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_bytes(up_img.getvalue())
-            st.success(f"已保存到 {dst}")
-            st.caption("接着在终端跑：`git add 简历/照片.jpg` → `git commit -m \"add photo\"` "
-                       "→ `git push`，云端名片 1 分钟后就有头像。")
-        st.caption("优先读取：`简历/照片.jpg`，其次 `offeragent/assets/avatar.png`")
+    st.markdown("##### 🔗 分享链接")
+    st.caption("照片和简历模板在「我的资料 → 我的简历」里管理。")
     st.markdown("**公开名片链接（发给 HR，免密码）**")
     st.code(public_base_url() + "/?twin=1", language=None)
     st.caption("主链接（带密码，自己用）：" + public_base_url())
@@ -1949,9 +1931,56 @@ def page_my_resume():
             st.caption("文本检查通过：没有本地路径 / 编码乱码。")
         next_step("resume_saved")
     c2.caption("保存位置：简历/我的简历.md　·　投递里的「简历定制」默认读这份")
-    c2.caption("照片：" + ("✅ 已有（简历/照片.jpg），名片页和简历打印版都会用上"
-                          if find_avatar() else
-                          "❌ 还没有 —— 去「设置 → 🖼 名片照片」上传一张"))
+
+    st.markdown("---")
+    st.markdown("#### 📷 简历照片")
+    st.caption("照片会出现在：打印版简历的右上角、以及公开名片页的头像。"
+               "传一次就够，后面所有模板共用这一张。")
+    ph1, ph2 = st.columns([1, 3], vertical_alignment="center")
+    _ph = find_avatar()
+    with ph1:
+        if _ph:
+            st.image(str(_ph), width=130, caption=f"当前：{_ph.name}")
+        else:
+            st.markdown(
+                '<div style="width:130px;height:130px;border-radius:50%;'
+                'background:linear-gradient(135deg,#5558D6,#1B2A4A);color:#fff;'
+                'display:flex;align-items:center;justify-content:center;'
+                'font-size:44px;font-weight:700;">余</div>',
+                unsafe_allow_html=True)
+            st.caption("还没有照片")
+    with ph2:
+        up_img = st.file_uploader("上传照片（jpg / png / webp，竖版证件照最好）",
+                                  type=["jpg", "jpeg", "png", "webp"], key="photo_up")
+        if up_img is not None:
+            st.image(up_img.getvalue(), width=120, caption="预览")
+            if st.button("✅ 用这张照片", type="primary", key="photo_save"):
+                dst = resume_builder.save_photo(up_img.getvalue())
+                st.success(f"已保存到 {dst.name}")
+                st.rerun()
+        st.caption("保存位置：简历/照片.jpg　·　想让云端名片也有头像，"
+                   "把这张图提交到 GitHub（`git add 简历/照片.jpg && git commit && git push`）")
+
+    st.markdown("---")
+    st.markdown("#### 🎨 简历模板")
+    st.caption("同一份内容，三种排版。选一个，先在浏览器里打开看一眼，"
+               "满意了再用本地脚本出 PDF（照片会自动嵌进去）。")
+    tpl_labels = list(resume_templates.TEMPLATES.values())
+    tpl_pick = st.segmented_control("模板", tpl_labels, default=tpl_labels[0],
+                                    label_visibility="collapsed", key="tpl_pick")
+    tpl_key = list(resume_templates.TEMPLATES.keys())[
+        tpl_labels.index(tpl_pick or tpl_labels[0])]
+    _html = resume_templates.render_with_photo(tpl_key)
+    t1, t2, t3 = st.columns([1, 1, 2])
+    t1.download_button("⬇️ 下载这份 HTML", data=_html.encode("utf-8"),
+                       file_name=f"余剑-简历-{tpl_key}.html", mime="text/html",
+                       key="tpl_dl")
+    t2.caption("下载后双击打开 → Ctrl+P → 另存为 PDF，就是当前模板的样子。")
+    t3.caption("要高保真 PDF（照片自动嵌入、实测 1 页）就在终端跑："
+               f"`python offeragent\\make_resume_pdf.py --template {tpl_key}`")
+    st.caption("模板说明：classic = 结果前置的单栏（推荐）；"
+               "sidebar = 左侧栏放照片/技能，信息密度高；compact = 极简黑白，"
+               "投偏传统团队更稳。换模板不会改内容，只改排版。")
 
 
 def page_resume_tailor():
