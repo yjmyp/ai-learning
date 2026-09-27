@@ -10,3 +10,7 @@ showWidgetBorder = true
 
 [server]
 headless = true
+
+[client]
+# 公网名片页要把 Streamlit 自己的工具栏收起来，看起来才像个正经作品页
+toolbarMode = "minimal"
