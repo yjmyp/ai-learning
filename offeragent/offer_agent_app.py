@@ -1928,6 +1928,23 @@ def page_drill():
                     st.error(str(e))
         if st.session_state.get(f"drill_review_{name}"):
             st.markdown(st.session_state[f"drill_review_{name}"])
+        st.markdown("---")
+        st.caption("把这轮拷问存进复盘库，数字分身就能拿它调整以后的回答（存本地，不上传）。")
+        if st.button("💾 存进复盘库（数字分身据此进化）", key=f"drill_save_{name}"):
+            lines = []
+            for i, it in enumerate(items, 1):
+                lines.append(f"Q{i}. {it['q']}")
+                if it.get("a"):
+                    lines.append(f"我的回答：{it['a']}")
+            if st.session_state.get(f"drill_review_{name}"):
+                lines.append("\n【模拟面试总评】\n"
+                             + st.session_state[f"drill_review_{name}"])
+            body = "\n".join(lines) + "\n\n（来源：面试拷问模式·模拟练习）"
+            meta_board = dict((j[0], j[1]) for j in jobs)
+            digital_twin.save_review(name, meta_board.get(name, {}).get("company", ""), body)
+            st.success(f"已存进复盘库：{name}")
+            st.caption("去「我的资料 → 数字分身 → 面试复盘入库」能看到它，"
+                       "点「提炼画像更新」会给你画像修改建议。")
 
 
 def page_applications():
