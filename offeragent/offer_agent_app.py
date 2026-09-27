@@ -1025,9 +1025,11 @@ def page_jobs():
         st.caption("给关键词和城市，程序自己去多个招聘站搜岗位并合并去重，勾选后一键入库。"
                    "默认走「全部平台」，一次把牛客＋实习僧＋BOSS 的结果全捞回来。")
         c1, c2, c3 = st.columns([2, 2, 2])
-        kw = c1.text_input("关键词", value="AI", key="src_kw",
-                           placeholder="AI / Agent / 大模型 / RAG")
-        city = c2.text_input("城市", value="南京", key="src_city")
+        kw = c1.text_input("关键词（可以写多个，用空格或逗号分开）", value="AI",
+                           key="src_kw",
+                           placeholder="AI 大模型 算法 / Agent,RAG")
+        city = c2.text_input("城市（也可以写多个）", value="南京", key="src_city",
+                             placeholder="南京 上海 / 远程")
         _boss_ok, _boss_why = job_sources.boss_available()
         _src_opts = [job_sources.ALL_SOURCES] + [
             s for s in job_sources.SOURCES if s != "BOSS直聘" or _boss_ok]
@@ -1055,13 +1057,16 @@ def page_jobs():
                         st.session_state["src_results"] = res["jobs"]
                         st.session_state["src_stats"] = res["by_source"]
                         st.session_state["src_errors"] = res["errors"]
+                        st.session_state["src_diag"] = res.get("diag", {})
                     else:
+                        _d = {}
                         found = job_sources.search(
                             src, kw.strip(), city.strip(),
-                            ask_model=lambda p: ask_chat(p))
+                            ask_model=lambda p: ask_chat(p), diag=_d)
                         st.session_state["src_results"] = found
                         st.session_state["src_stats"] = {src: len(found)}
                         st.session_state["src_errors"] = {}
+                        st.session_state["src_diag"] = {src: _d}
                 except Exception as e:
                     st.session_state["src_results"] = []
                     st.error(str(e))
@@ -1069,6 +1074,41 @@ def page_jobs():
         errors = st.session_state.get("src_errors") or {}
         if stats:
             st.caption("各平台结果：" + "　".join(f"{k} {v} 条" for k, v in stats.items()))
+        _diag = st.session_state.get("src_diag") or {}
+        if _diag:
+            with st.expander("🔬 抓取诊断（岗位为什么只有这些？）"):
+                st.caption("这里是每个平台「页面里有多少条 → 抽出来多少条」。"
+                           "数量少通常是下面几个原因，不是程序坏了：")
+                for _s, _d in _diag.items():
+                    if not isinstance(_d, dict):
+                        continue
+                    bits = []
+                    if _d.get("api_total"):
+                        bits.append(f"站点接口共 {_d['api_total']} 条，"
+                                    f"抓了 {_d.get('api_pages')} 页")
+                    if _d.get("raw") is not None:
+                        bits.append(f"页面结构化岗位 {_d['raw']} 条")
+                    if _d.get("text_len"):
+                        bits.append(f"页面文本 {_d['text_len']} 字，分 {_d.get('chunks')} 块抽取")
+                    if _d.get("keywords"):
+                        bits.append("关键词 " + "、".join(_d["keywords"]))
+                    if _d.get("kept") is not None:
+                        bits.append(f"最终保留 {_d['kept']} 条")
+                    if _d.get("api_error"):
+                        bits.append("接口没通：" + str(_d["api_error"])[:60])
+                    if _d.get("api_skipped"):
+                        bits.append("没走接口：" + str(_d["api_skipped"])[:60])
+                    st.markdown(f"- **{_s}**：" + "；".join(bits) if bits
+                                else f"- **{_s}**：没有诊断数据")
+                st.markdown(
+                    "**想让结果更多，按这个顺序试：**\n"
+                    "1. **换 BOSS 直聘**——岗位量最大，但要先在本机登录一次"
+                    "（上面那个一键登录按钮），云端用不了；\n"
+                    "2. **关键词写多个**：`AI 大模型 算法 数据` 这样，命中的都算；\n"
+                    "3. **城市放宽**：`南京 上海 远程`，或者干脆留空搜全国；\n"
+                    "4. **牛客是校招实习社区**，本身岗位就比 BOSS 少一个量级，"
+                    "它的作用是稳、快、数据干净；\n"
+                    "5. 单个岗位想看得更细，用「🔗 URL 导入」把链接粘进来单独抓。")
         for k, v in errors.items():
             st.warning(f"{k} 没成功：{v}")
         results = st.session_state.get("src_results", [])

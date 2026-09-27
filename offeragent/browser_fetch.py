@@ -203,6 +203,33 @@ class _CDP:
             pass
 
 
+def js_on_page(url: str, expression: str, wait: float = 5.0,
+               await_promise: bool = True, timeout: float = 60):
+    """打开页面 → 在页面里跑一段 JS → 把它 return 的值拿回来。
+
+    用途：有些站点（比如牛客）的接口必须带着它自己的 cookie / 请求头才通，
+    用 requests 直接调会返回「服务器错误」。让浏览器替我们发这个请求最稳。
+    """
+    if not launch(headless=True):
+        raise RuntimeError("浏览器启动失败：" + no_browser_message()[:200])
+    ws_url = _new_tab(url)
+    cdp = _CDP(ws_url)
+    try:
+        cdp.call("Page.enable")
+        time.sleep(wait)
+        res = cdp.call("Runtime.evaluate", {
+            "expression": expression,
+            "awaitPromise": bool(await_promise),
+            "returnByValue": True,
+        }, timeout=timeout)
+        if res.get("exceptionDetails"):
+            raise RuntimeError("页面脚本报错：" +
+                               str(res["exceptionDetails"])[:200])
+        return res.get("result", {}).get("value")
+    finally:
+        cdp.close()
+
+
 def fetch_html(url: str, wait: float = 4.0, keep_open: bool = False) -> str:
     """打开 URL，等页面渲染完，返回 HTML。"""
     if not launch():
