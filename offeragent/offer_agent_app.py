@@ -2033,6 +2033,8 @@ def page_applications():
     hero("投递记录", "每一条投了什么、用了什么话术、该跟进谁")
     rows = apply_assist.load_applications()
     all_jobs = list_jobs()
+    applied_jobs = [j for j in all_jobs
+                    if j[1]["status"] in ("已投", "面试中", "已拒", "Offer")]
     st.caption(f"共 {len(rows)} 条记录。漏斗和趋势在「🚀 今天 → 数据与日志」里看。")
 
     # 跟进提醒
