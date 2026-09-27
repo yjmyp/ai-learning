@@ -52,14 +52,14 @@ def main():
         time.sleep(7)
         return r
 
-    click_nav("找工作")
-    time.sleep(2)
-    click_btn("简历")
+    cdp.call("Page.navigate", {"url": "http://localhost:8501/resume"}, timeout=60)
+    time.sleep(7)
     mine_html = cdp.call("Runtime.evaluate", {
         "expression": "document.documentElement.outerHTML",
         "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
     mine = html_to_text(mine_html)
-    click_nav("设置")
+    cdp.call("Page.navigate", {"url": "http://localhost:8501/settings"}, timeout=60)
+    time.sleep(7)
     settings = text_now()
     cdp.close()
 

@@ -20,13 +20,19 @@ except Exception:
 import browser_fetch as bf  # noqa: E402
 from job_sources import html_to_text  # noqa: E402
 
-PLAN = {
-    "今天": ["今日行动", "数据与日志"],
-    "找工作": ["岗位库", "匹配分析", "简历", "投递台", "投递记录"],
-    "🧬 我的": ["自我蒸馏", "面试拷问", "分身陪练", "复盘入库"],
-    "展示": [],
-    "设置": [],
-}
+# 原生多页导航后每页都有真实 URL，直接按 URL 巡，比点元素稳
+PLAN = [
+    ("今天（行动 + 数据）", "/"),
+    ("岗位库", "/jobs"),
+    ("匹配分析", "/match"),
+    ("简历（模板/照片/覆盖）", "/resume"),
+    ("投递台", "/apply"),
+    ("投递记录", "/records"),
+    ("自我蒸馏", "/distill"),
+    ("面试准备（拷问/陪练/复盘）", "/interview"),
+    ("名片与分享", "/show"),
+    ("设置", "/settings"),
+]
 ERR_KWS = ["Traceback", "NameError", "KeyError", "AttributeError", "TypeError",
            "ValueError", "ModuleNotFoundError", "StreamlitDuplicateElementId",
            "UnboundLocalError", "IndexError"]
@@ -46,38 +52,27 @@ def main():
             "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
         return html_to_text(html)
 
-    def click(kind, label):
-        sel = "label" if kind == "label" else "button"
-        js = (f"(function(){{var ls=[].slice.call(document.querySelectorAll('{sel}'));"
-              f"var el=ls.filter(function(e){{return e.innerText.trim().indexOf('{label}')>=0;}})"
-              ".filter(function(e){return e.innerText.trim().length<16;})[0];"
-              "if(!el) return 'not-found'; el.click(); return 'clicked';})()")
-        r = cdp.call("Runtime.evaluate", {"expression": js, "returnByValue": True},
-                     timeout=40).get("result", {}).get("value")
+    def go(path):
+        cdp.call("Page.navigate", {"url": "http://localhost:8501" + path}, timeout=60)
         time.sleep(6)
-        return r
 
     bad = []
-    for group, subs in PLAN.items():
-        click("label", group)
-        targets = subs or ["（一级页）"]
-        for sub in targets:
-            if subs:
-                click("button", sub)
-            t = text_now()
-            hits = [k for k in ERR_KWS if k in t]
-            flag = "❌" if hits else "✅"
-            print(f"{flag} {group} → {sub:<10} 报错={hits if hits else '无'} | {len(t)} 字")
-            if hits:
-                bad.append((group, sub, hits))
+    for name, path in PLAN:
+        go(path)
+        t = text_now()
+        hits = [k for k in ERR_KWS if k in t]
+        flag = "❌" if hits else "✅"
+        print(f"{flag} {name:<18} {path:<10} 报错={hits if hits else '无'} | {len(t)} 字")
+        if hits:
+            bad.append((name, path, hits))
     cdp.close()
     print()
     if bad:
-        print(f"❌ {len(bad)} 个子页有报错：")
-        for g, s, h in bad:
-            print("   ", g, "→", s, h)
+        print(f"❌ {len(bad)} 个页面有报错：")
+        for name, path, h in bad:
+            print("   ", name, path, h)
     else:
-        print("✅ 所有子页都没有报错")
+        print("✅ 所有页面都没有报错")
     return 1 if bad else 0
 
 

@@ -20,13 +20,16 @@ import browser_fetch as bf  # noqa: E402
 
 JS = """
 (function(){
-  var out = {labels: [], buttons: [], radios: []};
+  var out = {labels: [], buttons: [], radios: [], links: []};
   document.querySelectorAll('label').forEach(function(e){
     var t = (e.innerText || '').trim(); if (t) out.labels.push(t);});
   document.querySelectorAll('button').forEach(function(e){
     var t = (e.innerText || '').trim(); if (t) out.buttons.push(t);});
   document.querySelectorAll('[role=radio]').forEach(function(e){
     var t = (e.innerText || '').trim(); if (t) out.radios.push(t);});
+  document.querySelectorAll('a[href]').forEach(function(e){
+    var t = (e.innerText || '').trim();
+    out.links.push((t ? t + ' → ' : '') + e.getAttribute('href'));});
   return JSON.stringify(out);
 })()
 """

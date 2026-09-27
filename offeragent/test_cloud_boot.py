@@ -26,7 +26,10 @@ import requests  # noqa: E402
 
 PY = sys.executable
 PORT = 8502
-NAV = ["今天", "找工作", "🧬 我的", "展示", "设置"]
+NAV = [("今天", "/"), ("岗位库", "/jobs"), ("匹配分析", "/match"),
+       ("简历", "/resume"), ("投递台", "/apply"), ("投递记录", "/records"),
+       ("自我蒸馏", "/distill"), ("面试准备", "/interview"),
+       ("名片与分享", "/show"), ("设置", "/settings")]
 ERR_KWS = ["Traceback", "StreamlitDuplicateElementId", "KeyError",
            "AttributeError", "NameError", "TypeError", "ValueError",
            "ModuleNotFoundError", "FileNotFoundError"]
@@ -90,22 +93,17 @@ def main():
             return html_to_text(html)
 
         bad_total = 0
-        for label in NAV:
-            js = ("(function(){var ls=[].slice.call(document.querySelectorAll('label'));"
-                  f"var el=ls.filter(function(e){{return e.innerText.trim().indexOf('{label}')>=0;}})"
-                  ".filter(function(e){return e.innerText.trim().length<10;})[0];"
-                  "if(!el) return 'not-found'; el.click(); return 'clicked';})()")
-            clicked = cdp.call("Runtime.evaluate",
-                               {"expression": js, "returnByValue": True},
-                               timeout=40).get("result", {}).get("value")
-            time.sleep(7)
+        for label, path in NAV:
+            cdp.call("Page.navigate",
+                     {"url": f"http://localhost:{PORT}" + path}, timeout=60)
+            time.sleep(6)
             t = text_now()
             bad = [k for k in ERR_KWS if k in t]
             bad_total += len(bad)
-            print(f"{label:<6} 点击={clicked:<10} 报错={bad if bad else '无'}"
+            print(f"{label:<8} {path:<11} 报错={bad if bad else '无'}"
                   f" | 文本 {len(t)} 字")
         cdp.close()
-        print("\n结论：", "✅ 空数据（云端首访）五个页面都没有报错"
+        print("\n结论：", f"✅ 空数据（云端首访）{len(NAV)} 个页面都没有报错"
               if not bad_total else f"❌ 空数据下有 {bad_total} 处报错")
     finally:
         proc.terminate()

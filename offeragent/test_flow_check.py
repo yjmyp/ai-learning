@@ -42,6 +42,15 @@ def main():
         time.sleep(7)
         return r
 
+    def goto(path):
+        cdp.call("Page.navigate", {"url": "http://localhost:8501" + path}, timeout=60)
+        time.sleep(7)
+
+    def current_path():
+        return cdp.call("Runtime.evaluate",
+                        {"expression": "location.pathname", "returnByValue": True},
+                        timeout=40).get("result", {}).get("value")
+
     def click_button(text):
         js = ("(function(){var bs=[].slice.call(document.querySelectorAll('button'));"
               f"var el=bs.filter(function(e){{return e.innerText.trim().indexOf('{text}')>=0;}})[0];"
@@ -57,28 +66,30 @@ def main():
     checks.append(("今日页有流程条 ④有回应", "④ 有回应" in t))
     checks.append(("今日页有今日投递目标", "今天 " in t and "家" in t))
 
-    click_nav("找工作")
-    click_button("岗位库")
+    goto("/jobs")
     t = page_text()
     checks.append(("岗位页有一站式卡片", "一站式" in t))
     checks.append(("一站式含②ATS 简历覆盖", "ATS 简历覆盖" in t))
     checks.append(("一站式含④标记已投", "标记已投" in t))
 
-    # 关键回归：岗位卡片的「🔍 匹配」要能跳到同分区的「匹配分析」子页
+    # 关键回归：岗位卡片的「🔍 匹配」要真的跳到 /match（原生多页跳转）
     r = click_button("🔍 匹配")
     t = page_text()
-    checks.append(("点匹配按钮能跳到匹配分析", r == "clicked" and "匹配分析" in t))
+    checks.append(("点匹配按钮跳到 /match",
+                   r == "clicked" and current_path() == "/match"))
+    checks.append(("跳转后页面是匹配分析", "匹配分析" in t))
     checks.append(("跳转后无 Traceback/StreamlitAPIException",
                    "Traceback" not in t and "StreamlitAPIException" not in t))
-    click_button("岗位库")
 
-    click_nav("🧬 我的")
+    goto("/distill")
     t = page_text()
-    checks.append(("「我的」含自我蒸馏", "自我蒸馏" in t))
-    checks.append(("「我的」含面试拷问", "面试拷问" in t))
+    checks.append(("自我蒸馏页正常", "自我蒸馏" in t))
+    goto("/interview")
+    t = page_text()
+    checks.append(("面试准备页含拷问与陪练",
+                   "面试拷问" in t and "分身陪练" in t))
 
-    click_nav("找工作")
-    click_button("简历")
+    goto("/resume")
     t = page_text()
     checks.append(("简历页无 Traceback", "Traceback" not in t))
     checks.append(("简历来源三选一在简历页", "问答式生成一份" in t))

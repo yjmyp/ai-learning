@@ -141,15 +141,15 @@ def onboarding_panel():
     todo = []
     if not PROFILE_PATH.exists():
         todo.append(("还没有「个人画像」——匹配和话术都依赖它",
-                     "🧬 我的|自我蒸馏", "花 10 分钟答完 15 题就有"))
+                     "distill", "花 10 分钟答完 15 题就有"))
     jobs = list_jobs()
     if not jobs:
-        todo.append(("岗位库是空的", "🎯 找工作|岗位库", "给关键词搜一次岗，勾选入库"))
+        todo.append(("岗位库是空的", "jobs", "给关键词搜一次岗，勾选入库"))
     elif not any(m.get("match_score") is not None for _, m, _ in jobs):
-        todo.append(("岗位还没有匹配度", "🎯 找工作|匹配分析", "跑一次就知道值不值得投"))
+        todo.append(("岗位还没有匹配度", "match", "跑一次就知道值不值得投"))
     if not any(m.get("status") in ("已投", "面试中", "已拒", "Offer")
                for _, m, _ in jobs):
-        todo.append(("还没投出去过", "🎯 找工作|投递台", "话术在这里生成，发送由你按"))
+        todo.append(("还没投出去过", "apply", "话术在这里生成，发送由你按"))
 
     if not todo:
         return
@@ -159,8 +159,7 @@ def onboarding_panel():
         c1.markdown(f"- **{text}**　<span style='color:#93A1AF;font-size:12.5px'>{hint}</span>",
                     unsafe_allow_html=True)
         if c2.button("去处理", key=f"ob_{target}"):
-            _t, _, _s = target.partition("|")
-            goto(_t, _s)
+            goto_page(target)
     st.divider()
 
 
@@ -191,7 +190,7 @@ def page_today():
     with st.expander("看连续投递天数 / 改目标"):
         st.caption("每日投递目标在「⚙️ 设置」里改（设置项统一收在设置页）。")
         if st.button("去设置里改目标", key="to_target_setting"):
-            goto(NAV_SETTINGS)
+            goto_page("settings")
         dates = sorted({r.get("date") for r in apply_assist.load_applications()
                         if r.get("date")}, reverse=True)
         streak = 0
@@ -269,7 +268,7 @@ def page_today():
             b1, b2, b3 = st.columns([2, 2, 2])
             if b1.button("✍️ 去投递台生成话术", key=f"g_{name}",
                          help="全应用只有投递台生成话术，避免同一件事两套做法"):
-                goto(NAV_WORK, "投递台", focus={"talk_pick": name})
+                goto_page("apply", talk_pick=name)
             url = meta.get("source_url", "")
             if b2.button("🔗 打开岗位页", key=f"o_{name}", disabled=not url):
                 if apply_assist.open_url(url):
@@ -1295,7 +1294,7 @@ def page_jobs():
                         st.caption("话术统一在「投递台」生成（避免两套代码）。"
                                    "这里点一下会跳过去，并已经帮你选中这家。")
                         if st.button("③ 去投递台写话术", key=f"f3_{name}"):
-                            goto(NAV_WORK, "投递台", focus={"talk_pick": name})
+                            goto_page("apply", talk_pick=name)
                         st.markdown("**④ 标记已投**")
                         st.caption("发送由你自己按；这里只负责记录状态，之后 7 天没动静会自动进跟进提醒。")
                         if st.button("④ 我发出去了，标记已投", key=f"f4_{name}"):
@@ -1314,7 +1313,7 @@ def page_jobs():
                         st.caption("已标记已投（见页面底部提示）")
         with cols[1]:
             if not excl and st.button("🔍 匹配", key=f"m_{name}"):
-                goto(NAV_WORK, "匹配分析", focus={"match_pick": name})
+                goto_page("match", match_pick=name)
         with cols[2]:
             if not excl and st.button("✅ 已投", key=f"d_{name}"):
                 meta["status"] = "已投"
@@ -2129,90 +2128,101 @@ def page_applications():
 
 
 # ============================================================
-# 导航：一级分区 / 二级子页 / 跨页跳转
-# 设计原则：一个动作只有一个入口；功能联动的东西放同一个分区，
-#          并且可以从任何地方「跳过去并定位到那一条」。
+# 导航：用 Streamlit 原生多页（st.navigation）
+# 为什么换掉自定义导航：
+#   1. 原生导航有真实 URL（/resume、/apply…）→ 可刷新、可前进后退、可分享
+#   2. 侧边栏是真·两级树（分区标题 + 页），不再是"横排按钮组"那种说不清层级的东西
+#   3. 跨页跳转用 st.switch_page，不用再靠 session_state 里塞"待跳转标记"
+# 规则不变：一个动作只有一个入口；同一个数字只有一个出处。
 # ============================================================
-NAV_TODAY = "🚀 今天"
-NAV_WORK = "🎯 找工作"
-NAV_ME = "🧬 我的"
-NAV_SHOW = "📇 展示"
-NAV_SETTINGS = "⚙️ 设置"
-
-GROUP_KEY = {
-    NAV_TODAY: "today",
-    NAV_WORK: "work",
-    NAV_ME: "me",
-    NAV_SHOW: "show",
-    NAV_SETTINGS: "settings",
-}
+PAGES = {}
 
 
-def goto(group: str, sub: str = "", focus: dict = None):
-    """跳到另一个分区（可选：定位到二级子页、预选某个下拉框）。
+def goto_page(key: str, **focus):
+    """跨页跳转：切到目标页，并把要预选的值先塞进 session_state。
 
-    必须走「待处理标记」——导航控件已经实例化之后再改它的 session_state 会报错，
-    所以这里只登记意图，由 main() 在控件创建之前应用。
+    用法：goto_page("match", match_pick="某岗位")
     """
-    st.session_state["_go_nav"] = group
-    if sub:
-        st.session_state["_go_sub"] = (GROUP_KEY.get(group, ""), sub)
-    if focus:
-        st.session_state["_go_focus"] = focus
-    st.rerun()
+    for k, v in focus.items():
+        st.session_state[k] = v
+    page = PAGES.get(key)
+    if page is None:
+        st.warning(f"找不到目标页面：{key}")
+        return
+    st.switch_page(page)
 
 
-def subnav(group_key: str, options: list, default: str) -> str:
-    """二级导航：会话状态控制，所以跨页跳转能直接改写它。"""
-    k = f"subnav_{group_key}"
-    if st.session_state.get(k) not in options:
-        st.session_state[k] = default
-    picked = st.segmented_control("", options, key=k, label_visibility="collapsed")
-    return picked or st.session_state[k]
-
-
-def group_today():
-    sub = subnav("today", ["今日行动", "数据与日志"], "今日行动")
-    if sub == "数据与日志":
-        page_data_log()
-    else:
+def page_today_hub():
+    """今天：要做什么 + 做得怎么样。统计放进同一页的第二个页签，口径只有这一处。"""
+    t1, t2 = st.tabs(["行动清单", "数据与日志"])
+    with t1:
         page_today()
+    with t2:
+        page_data_log()
 
 
-def group_work():
-    sub = subnav("work", ["岗位库", "匹配分析", "简历", "投递台", "投递记录"], "岗位库")
-    if sub == "匹配分析":
-        page_match()
-    elif sub == "简历":
-        page_resume_hub()
-    elif sub == "投递台":
-        page_apply_desk()
-    elif sub == "投递记录":
-        page_applications()
-    else:
-        page_jobs()
-
-
-def group_me():
-    """关于我的一切：画像（自我蒸馏）→ 面试准备 → 复盘写回画像。一个闭环。"""
-    sub = subnav("me", ["自我蒸馏", "面试拷问", "分身陪练", "复盘入库"], "面试拷问")
+def page_interview():
+    """面试：被拷问 → 让分身陪练 → 复盘写回画像。三件事一个闭环。"""
+    t1, t2, t3 = st.tabs(["面试拷问", "分身陪练", "复盘入库"])
     profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
-    if sub == "自我蒸馏":
-        distill_section()
-    elif sub == "分身陪练":
-        twin_practice_section(profile)
-    elif sub == "复盘入库":
-        twin_review_section(profile)
-    else:
+    with t1:
         page_drill()
+    with t2:
+        twin_practice_section(profile)
+    with t3:
+        twin_review_section(profile)
 
 
-def group_show():
-    page_show()
+def build_pages():
+    """注册所有页面（侧边栏按分区显示）。返回 dict 给 st.navigation。
+
+    注意：Streamlit 侧边栏最多直接显示 10 个页面，多的会被折叠成「View more」，
+    所以这里刻意压到 10 个——相关的事合并进同一页的页签，而不是继续往下加菜单。
+    """
+    profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
+    spec = [
+        ("主线", [
+            ("today", "今天（行动 + 数据）", "🚀", page_today_hub, True),
+        ]),
+        ("找工作", [
+            ("jobs", "岗位库", "🔎", page_jobs, False),
+            ("match", "匹配分析", "🎯", page_match, False),
+            ("resume", "简历（模板 / 照片 / 覆盖）", "📄", page_resume, False),
+            ("apply", "投递台", "✉️", page_apply_desk, False),
+            ("records", "投递记录", "📋", page_applications, False),
+        ]),
+        ("我的", [
+            ("distill", "自我蒸馏", "🧬", distill_section, False),
+            ("interview", "面试准备（拷问 / 陪练 / 复盘）", "🎤", page_interview, False),
+        ]),
+        ("对外", [
+            ("show", "名片与分享", "📇", page_show, False),
+        ]),
+        ("其它", [
+            ("settings", "设置", "⚙️", page_settings, False),
+        ]),
+    ]
+    sections, flat = {}, {}
+    for section, items in spec:
+        pages = []
+        for key, title, icon, fn, is_default in items:
+            pg = st.Page(fn, title=title, icon=icon,
+                         url_path=key, default=is_default)
+            pages.append(pg)
+            flat[key] = pg
+        sections[section] = pages
+    PAGES.clear()
+    PAGES.update(flat)
+    return sections
 
 
-def group_settings():
-    page_settings()
+def page_resume():
+    """简历：一个页面装两件事——内容/模板/照片 + 按岗位的覆盖检查。"""
+    t1, t2 = st.tabs(["简历内容 / 模板 / 照片", "按岗位检查覆盖（ATS）"])
+    with t1:
+        page_my_resume()
+    with t2:
+        page_resume_tailor(embedded=True)
 
 
 
@@ -2299,16 +2309,6 @@ def distill_section():
         page_profile()
 
 
-def page_resume_hub():
-    """简历：内容 + 模板 + 照片 + 按岗位做 ATS 覆盖检查，全在这一页。"""
-    sub = subnav("resume", ["简历内容 / 模板 / 照片", "按岗位检查覆盖"],
-                 "简历内容 / 模板 / 照片")
-    if sub.startswith("按岗位"):
-        page_resume_tailor(embedded=True)
-    else:
-        page_my_resume()
-
-
 def page_apply_desk():
     """投递台：全应用唯一生成投递话术的地方（单条精修 / 批量一次到位）。"""
     hero("投递台", "话术、岗位链接、投递三件套一次备好；发送那一下由你自己按")
@@ -2316,9 +2316,13 @@ def page_apply_desk():
     vlabel = st.segmented_control("话术场景", labels, default=labels[0],
                                   key="desk_variant") or labels[0]
     vkey = list(TALK_VARIANTS.keys())[labels.index(vlabel)]
-    sub = subnav("apply", ["批量（一次处理全部待投）", "单条精修（三版可改）"],
-                 "批量（一次处理全部待投）")
-    if sub.startswith("单条"):
+    mode = st.segmented_control(
+        "工作方式", ["🗂 批量（一次处理全部待投）", "✍️ 单条精修（一家一版）"],
+        default="🗂 批量（一次处理全部待投）", key="desk_mode") \
+        or "🗂 批量（一次处理全部待投）"
+    st.caption("批量：适合已经筛完、要一次性推进多家。"
+               "单条：适合重点公司，想逐句改。两者都只**生成**话术，发送永远由你按。")
+    if "单条" in mode:
         page_talk(embedded=True, vkey=vkey)
     else:
         page_batch_apply(vkey=vkey)
@@ -2558,7 +2562,7 @@ def twin_practice_section(profile: str):
     if not profile.strip():
         st.warning("先去「🧬 我的 → 自我蒸馏」生成画像，分身才有记忆。")
         if st.button("现在去蒸馏", key="to_distill"):
-            goto(NAV_ME, "自我蒸馏")
+            goto_page("distill")
         return
     with st.expander("📄 分身当前记忆（画像全文）", expanded=False):
         st.markdown(profile)
@@ -2679,7 +2683,7 @@ def page_show():
             col.caption(hint)
         if not all(ok for _, ok, _ in items):
             if st.button("去补齐（照片 / 简历 / 模板）", key="show_fix"):
-                goto(NAV_WORK, "简历")
+                goto_page("resume")
 
     with st.container(border=True):
         st.markdown("#### 公开数字名片（免密）")
@@ -2702,7 +2706,7 @@ def page_show():
         else:
             st.caption("还没有导出过 PDF。")
         if st.button("去换模板 / 重新导出", key="show_tpl"):
-            goto(NAV_WORK, "简历")
+            goto_page("resume")
 
     with st.container(border=True):
         st.markdown("#### 你自己的工作台（要密码）")
@@ -2819,9 +2823,11 @@ def main():
     inject_css(theme_now)
     ensure_dirs()
 
+    # 原生多页导航：侧边栏自动生成「分区 + 页」两级结构，每页有真实 URL
+    pg = st.navigation(build_pages(), position="sidebar")
+
     with st.sidebar:
-        st.markdown("## 🎯 OfferAgent")
-        st.caption("求职工作台 · v5（结构重排版）")
+        st.divider()
         picked_theme = st.selectbox("界面风格（可切换对比）", theme_names,
                                     index=theme_names.index(theme_now),
                                     key="theme_pick")
@@ -2829,21 +2835,6 @@ def main():
             _cfg["theme"] = picked_theme
             write_text(CONFIG_PATH, json.dumps(_cfg, ensure_ascii=False, indent=2))
             st.rerun()
-        st.divider()
-        # 跨页跳转：在 widget 创建之前把「待处理意图」落进 session_state 才合法
-        _go = st.session_state.pop("_go_nav", None)
-        if _go:
-            st.session_state["nav"] = _go
-        _go_sub = st.session_state.pop("_go_sub", None)
-        if _go_sub and _go_sub[0]:
-            st.session_state[f"subnav_{_go_sub[0]}"] = _go_sub[1]
-        _go_focus = st.session_state.pop("_go_focus", None)
-        if _go_focus:
-            for _wk, _wv in _go_focus.items():
-                st.session_state[_wk] = _wv
-        nav = st.radio("导航", [NAV_TODAY, NAV_WORK, NAV_ME, NAV_SHOW, NAV_SETTINGS],
-                       key="nav")
-        st.divider()
         jobs_all = list_jobs()
         pending_n = sum(1 for _, m, _ in jobs_all if m["status"] == "待投")
         applied_n = sum(1 for _, m, _ in jobs_all if m["status"] == "已投")
@@ -2855,21 +2846,12 @@ def main():
         _left, _lim = usage_left()
         st.caption("今天模型调用：**不限**" if _lim <= 0
                    else f"今天模型调用：**{_lim - _left} / {_lim}** 次")
-        st.divider()
-        st.caption("今天 → 找工作（岗位/匹配/简历/投递台/记录）")
-        st.caption("我的（蒸馏/面试/分身/复盘）→ 展示 → 设置")
 
-    pages = {
-        NAV_TODAY: group_today,
-        NAV_WORK: group_work,
-        NAV_ME: group_me,
-        NAV_SHOW: group_show,
-        NAV_SETTINGS: group_settings,
-    }
-    if nav != NAV_SETTINGS:
+    # 流程条贴在每个页面上方；设置页不需要
+    if pg.url_path != "settings":
         pipeline_bar()
         st.divider()
-    pages.get(nav, group_today)()
+    pg.run()
     pending = st.session_state.pop("_pending_hint", "")
     if pending:
         st.success("✅ " + pending)

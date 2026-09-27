@@ -22,7 +22,11 @@ import browser_fetch as bf  # noqa: E402
 from job_sources import html_to_text  # noqa: E402
 
 OUT_DIR = HERE / "data" / "shots"
-NAV = ["今天", "找工作", "🧬 我的", "展示", "设置"]
+# 原生多页导航：每页有真实 URL，直接按 URL 巡
+PLAN = [("today", "/"), ("jobs", "/jobs"), ("match", "/match"),
+        ("resume", "/resume"), ("apply", "/apply"), ("records", "/records"),
+        ("distill", "/distill"), ("interview", "/interview"),
+        ("show", "/show"), ("settings", "/settings")]
 ERR_KWS = ["Traceback", "StreamlitDuplicateElementId", "KeyError",
            "AttributeError", "NameError", "TypeError", "ValueError",
            "ModuleNotFoundError", "st.error"]
@@ -45,28 +49,23 @@ def main():
         return r.get("result", {}).get("value")
 
     results = []
-    for i, label in enumerate(NAV):
-        click = (
-            "(() => {const ls=[...document.querySelectorAll('label')];"
-            f"const el=ls.find(e=>e.innerText.trim().includes('{label}'));"
-            "if(!el) return 'not-found'; el.click(); return 'clicked';})()"
-        )
-        clicked = evaljs(click)
-        time.sleep(7)
+    for i, (label, path) in enumerate(PLAN):
+        cdp.call("Page.navigate", {"url": "http://localhost:8501" + path}, timeout=60)
+        time.sleep(6)
         text = html_to_text(evaljs("document.documentElement.outerHTML") or "")
         bad = [k for k in ERR_KWS if k in text]
         shot = OUT_DIR / f"page_{i + 1}_{label}.png"
         res = cdp.call("Page.captureScreenshot",
                        {"format": "png", "captureBeyondViewport": True}, timeout=60)
         shot.write_bytes(base64.b64decode(res.get("data", "")))
-        results.append((label, clicked, bad, len(text), shot.name))
-        print(f"{label:<8} 点击={clicked:<10} 报错={bad if bad else '无'}"
+        results.append((label, path, bad, len(text), shot.name))
+        print(f"{label:<9} {path:<10} 报错={bad if bad else '无'}"
               f" | 文本 {len(text)} 字 | {shot.name}")
 
     cdp.close()
     print(f"\n截图目录：{OUT_DIR}")
     bad_total = [r for r in results if r[2]]
-    print("结论：", "✅ 5 个页面都没有报错" if not bad_total
+    print("结论：", f"✅ {len(PLAN)} 个页面都没有报错" if not bad_total
           else f"❌ 有 {len(bad_total)} 个页面报错")
 
 
