@@ -1,0 +1,17 @@
+# 密钥与本地配置——绝不提交
+.streamlit/secrets.toml
+
+# 全部运行数据（岗位库/匹配报告/投递记录/本地配置）——含个人求职隐私，绝不提交
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+
+# 个人画像实验档案（隐私，不公开）
+profile_*.md
+
+# 第三方参考项目副本（不公开）
+reference_icebreaker/
+reference_*/
