@@ -141,15 +141,15 @@ def onboarding_panel():
     todo = []
     if not PROFILE_PATH.exists():
         todo.append(("还没有「个人画像」——匹配和话术都依赖它",
-                     "📋 我的资料", "进「自我蒸馏」花 10 分钟答完 15 题就有"))
+                     "🧬 我的|自我蒸馏", "花 10 分钟答完 15 题就有"))
     jobs = list_jobs()
     if not jobs:
-        todo.append(("岗位库是空的", "🔎 岗位", "给关键词搜一次岗，勾选入库"))
+        todo.append(("岗位库是空的", "🎯 找工作|岗位库", "给关键词搜一次岗，勾选入库"))
     elif not any(m.get("match_score") is not None for _, m, _ in jobs):
-        todo.append(("岗位还没有匹配度", "🔎 岗位", "去「匹配分析」跑一次"))
+        todo.append(("岗位还没有匹配度", "🎯 找工作|匹配分析", "跑一次就知道值不值得投"))
     if not any(m.get("status") in ("已投", "面试中", "已拒", "Offer")
                for _, m, _ in jobs):
-        todo.append(("还没投出去过", "✉️ 投递", "先把简历准备好，再生成话术"))
+        todo.append(("还没投出去过", "🎯 找工作|投递台", "话术在这里生成，发送由你按"))
 
     if not todo:
         return
@@ -159,10 +159,8 @@ def onboarding_panel():
         c1.markdown(f"- **{text}**　<span style='color:#93A1AF;font-size:12.5px'>{hint}</span>",
                     unsafe_allow_html=True)
         if c2.button("去处理", key=f"ob_{target}"):
-            # 注意：不能直接写 st.session_state["nav"]（widget 已实例化会报错），
-            # 走「待跳转」标记，在 main() 渲染导航条之前再设置。
-            st.session_state["_go_nav"] = target
-            st.rerun()
+            _t, _, _s = target.partition("|")
+            goto(_t, _s)
     st.divider()
 
 
@@ -190,13 +188,10 @@ def page_today():
     today_n = apply_assist.applied_today()
     st.progress(min(today_n / max(target, 1), 1.0),
                 text=f"今天的投递目标：{today_n} / {target} 家")
-    with st.expander("调整每日目标 / 看连续投递天数"):
-        new_target = st.number_input("每天投几家", min_value=1, max_value=20,
-                                     value=target, key="target_in")
-        if st.button("保存目标", key="target_save"):
-            _c["daily_target"] = int(new_target)
-            write_text(CONFIG_PATH, json.dumps(_c, ensure_ascii=False, indent=2))
-            st.success("已保存")
+    with st.expander("看连续投递天数 / 改目标"):
+        st.caption("每日投递目标在「⚙️ 设置」里改（设置项统一收在设置页）。")
+        if st.button("去设置里改目标", key="to_target_setting"):
+            goto(NAV_SETTINGS)
         dates = sorted({r.get("date") for r in apply_assist.load_applications()
                         if r.get("date")}, reverse=True)
         streak = 0
@@ -272,15 +267,9 @@ def page_today():
                          expanded=(pending.index((name, meta, jd)) == 0)):
             key = f"today_talk_{name}"
             b1, b2, b3 = st.columns([2, 2, 2])
-            if b1.button("✍️ 生成/刷新话术", key=f"g_{name}"):
-                with st.spinner("写话术中…"):
-                    try:
-                        talk, hits = generate_talk(
-                            lambda p, *m: ask_chat(p, *m), "boss", profile, jd)
-                        st.session_state[key] = talk
-                        st.session_state[key + "_hits"] = hits
-                    except Exception as e:
-                        st.error(str(e))
+            if b1.button("✍️ 去投递台生成话术", key=f"g_{name}",
+                         help="全应用只有投递台生成话术，避免同一件事两套做法"):
+                goto(NAV_WORK, "投递台", focus={"talk_pick": name})
             url = meta.get("source_url", "")
             if b2.button("🔗 打开岗位页", key=f"o_{name}", disabled=not url):
                 if apply_assist.open_url(url):
@@ -380,6 +369,52 @@ def page_report():
         with st.expander(f"历史日报（{len(saved)} 篇）"):
             pick = st.selectbox("选一天", [p.stem for p in saved], key="report_pick")
             st.markdown(read_text(REPORTS_DIR / f"{pick}.md"))
+
+
+def page_data_log():
+    """数据与日志：全应用唯一统计口径的地方 + 日报。
+
+    以前「数据概览 / 求职日报 / 投递记录」三页各算一遍口径还不一样，
+    现在统一在这里算：漏斗 → 趋势 → 岗位排名 → 日报。
+    """
+    hero("数据与日志", "漏斗、趋势、岗位排名、每日日报——统计口径只有这一处")
+    ensure_dirs()
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    jobs = list_jobs()
+    rows = apply_assist.load_applications()
+    fn = pipeline.funnel(jobs)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("已投出去", fn["submitted"])
+    c2.metric("有回应", fn["interviewed"], help="面试中 / 已拒 / Offer 都算回应")
+    c3.metric("Offer", fn["offers"])
+    c4.metric("今天投递", apply_assist.applied_today())
+    st.caption(f"回应率 {fn['reply_rate']}%　·　Offer 率 {fn['offer_rate']}%　·　"
+               f"口径：岗位库里状态为已投 / 面试中 / 已拒 / Offer 的岗位")
+
+    g1, g2 = st.columns(2)
+    with g1:
+        st.markdown("##### 投递漏斗")
+        if fn["submitted"] > 0:
+            st.plotly_chart(v41.funnel_fig(fn["submitted"], fn["interviewed"], fn["offers"]),
+                            use_container_width=True)
+        else:
+            st.caption("还没有投递记录。投出第一份后这里会出现漏斗。")
+    with g2:
+        st.markdown("##### 近 14 天投递趋势")
+        if rows:
+            st.plotly_chart(v41.weekly_fig(rows), use_container_width=True)
+        else:
+            st.caption("还没有投递记录。")
+
+    active = [j for j in jobs if j[1]["status"] != "排除"]
+    fig = rank_bar(active)
+    if fig:
+        st.markdown("##### 岗位匹配度排名")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+    page_report()
 
 # ============================================================
 # 文件工具
@@ -820,126 +855,6 @@ def inject_css(variant: str = None):
     st.markdown(theme.get_css(variant), unsafe_allow_html=True)
 
 
-def _legacy_css_unused():
-    # 旧版样式保留备查，不再使用
-    st.markdown("""
-<style>
-:root {
-  --brand: #0F766E;
-  --brand2: #2563EB;
-  --ink: #0F172A;
-  --muted: #64748B;
-  --bg: #F6F8FB;
-  --card: #FFFFFF;
-  --line: #E2E8F0;
-}
-.stApp { background: var(--bg); }
-[data-testid="stSidebar"] {
-  background: linear-gradient(180deg, #0B1220 0%, #134E4A 100%);
-  border-right: 0;
-}
-[data-testid="stSidebar"] * { color: #E2E8F0; }
-[data-testid="stSidebar"] .stRadio label {
-  font-size: 15px; padding: 8px 12px; border-radius: 10px; margin-bottom: 2px;
-}
-[data-testid="stSidebar"] .stRadio label:hover { background: rgba(255,255,255,0.10); }
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1 { color: #F8FAFC; }
-h1, h2, h3 { color: var(--ink); letter-spacing: -0.01em; }
-div[data-testid="stMetric"] {
-  background: var(--card); border: 1px solid var(--line);
-  border-radius: 16px; padding: 14px 16px;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.06);
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-div[data-testid="stMetric"]:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(15,23,42,0.10); }
-div[data-testid="stMetric"] label { color: var(--muted); }
-div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: var(--ink); font-weight: 700; }
-.stButton > button {
-  border-radius: 10px; border: 1px solid var(--line);
-  background: var(--card); color: var(--ink); font-weight: 600;
-}
-.stButton > button:hover { border-color: var(--brand); color: var(--brand); }
-.stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, #0F766E, #0D9488);
-  border: none; color: #fff;
-}
-.stButton > button[kind="primary"]:hover { opacity: .92; color: #fff; }
-textarea, .stTextInput input, [data-baseweb="select"] > div {
-  border-radius: 12px !important;
-}
-div[data-testid="stExpander"] {
-  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-}
-[data-testid="stTabs"] [data-baseweb="tab-list"] { gap: 6px; }
-[data-testid="stTabs"] button[role="tab"] { border-radius: 10px 10px 0 0; }
-[data-testid="stStatusWidget"] { display: none; }
-.oa-hero {
-  background: linear-gradient(135deg, #0F172A 0%, #134E4A 55%, #1D4ED8 135%);
-  border-radius: 18px; padding: 28px 32px; margin-bottom: 20px; color: #F8FAFC;
-  position: relative; overflow: hidden;
-}
-.oa-hero::after {
-  content: ""; position: absolute; right: -60px; top: -60px;
-  width: 220px; height: 220px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,.14), transparent 65%);
-}
-.oa-hero h1 { color: #F8FAFC; font-size: 27px; margin-bottom: 6px; }
-.oa-hero p { color: #CBD5E1; margin: 0; font-size: 14px; }
-.oa-hero .oa-sub { color: #7C93B0; font-size: 12px; margin-top: 10px; }
-.oa-card {
-  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-  padding: 16px 18px; margin-bottom: 12px;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.05);
-}
-.oa-tag {
-  display: inline-block; padding: 2px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 600; margin-right: 6px;
-}
-.oa-tag-blue   { background: #DBEAFE; color: #1D4ED8; }
-.oa-tag-green  { background: #D1FAE5; color: #065F46; }
-.oa-tag-amber  { background: #FEF3C7; color: #92400E; }
-.oa-tag-red    { background: #FEE2E2; color: #991B1B; }
-.stCodeBlock pre { border-radius: 12px; }
-
-/* ---------- v3 细节打磨 ---------- */
-[data-testid="stChatMessage"] {
-  background: var(--card); border: 1px solid var(--line);
-  border-radius: 16px; padding: 14px 16px; margin-bottom: 10px;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.05);
-}
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  background: #EFF6FF; border-color: #BFDBFE;
-}
-[data-testid="stChatMessage"] p { margin-bottom: 6px; }
-[data-testid="stProgress"] div[role="progressbar"] > div { border-radius: 999px; }
-[data-testid="stProgress"] div[role="progressbar"] > div > div {
-  background: linear-gradient(90deg, #0F766E, #2563EB); border-radius: 999px;
-}
-[data-testid="stPlotlyChart"] {
-  background: var(--card); border: 1px solid var(--line);
-  border-radius: 16px; padding: 10px;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.05);
-}
-[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
-[data-testid="stAlert"] { border-radius: 12px; }
-hr { border-color: var(--line); margin: 18px 0; }
-textarea:focus, .stTextInput input:focus, .stChatInput textarea:focus {
-  border-color: var(--brand) !important;
-  box-shadow: 0 0 0 3px rgba(15,118,110,.12) !important;
-}
-[data-testid="stChatInput"] {
-  border-radius: 14px; border: 1px solid var(--line); background: var(--card);
-}
-div[data-testid="stExpander"] summary { font-weight: 600; }
-@media (max-width: 640px) {
-  .oa-hero { padding: 20px 18px; border-radius: 14px; }
-  .oa-hero h1 { font-size: 22px; }
-  main .block-container { padding-left: 12px; padding-right: 12px; }
-}
-</style>
-""", unsafe_allow_html=True)
-
-
 def hero(title, subtitle, sub2=""):
     """紧凑页头：标题 + 一行说明。不再用大块渐变，保持求职场合的克制。"""
     sub = subtitle or ""
@@ -1013,39 +928,6 @@ def render_job_detail(name: str, meta: dict, jd: str):
 # ============================================================
 # 页面：仪表盘
 # ============================================================
-def page_dashboard():
-    hero("OfferAgent", "画像 → 岗位 → 匹配 → 话术 → 投递，一条龙", "余剑 · 南邮网络工程 2027 届 · v2 联网版")
-    jobs = list_jobs()
-    active = [j for j in jobs if j[1]["status"] != "排除"]
-    done = [j for j in jobs if j[1]["status"] == "已投"]
-    scored = [j for j in active if j[1]["match_score"] is not None]
-    avg = round(sum(j[1]["match_score"] for j in scored) / len(scored)) if scored else 0
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("岗位总数", len(jobs))
-    c2.metric("待投", len([j for j in active if j[1]["status"] == "待投"]))
-    c3.metric("已投", len(done))
-    c4.metric("平均匹配度", f"{avg}%" if scored else "—")
-
-    if not jobs:
-        st.info("岗位库为空：去「岗位库」页粘贴第一份 JD 或粘贴招聘页 URL 开始。")
-        return
-    fig = rank_bar(active)
-    if fig:
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("#### 🏆 最高匹配岗位")
-    top = sorted([j for j in active if j[1]["match_score"]],
-                 key=lambda x: -(x[1]["match_score"] or 0))[:3]
-    for name, meta, _ in top:
-        st.markdown(
-            f'<div class="oa-card">'
-            f'<b>{meta["name"]}</b> {status_tag(meta["status"])} '
-            f'<span class="oa-tag oa-tag-green">{meta["match_score"]}%</span> '
-            f'<span style="color:#64748B;font-size:13px">{meta["city"]}</span>'
-            f'<br><span style="color:#64748B;font-size:13px">{meta.get("created_at", "")}</span>'
-            f'</div>', unsafe_allow_html=True)
-
-
 # ============================================================
 # 页面：我的画像
 # ============================================================
@@ -1315,7 +1197,7 @@ def page_jobs():
                   type="primary", disabled=not unmatched, key="batch_match"):
         fprof = read_text(PROFILE_PATH) or read_text(ME_PATH)
         if not fprof.strip():
-            st.warning("先到「我的资料 → 自我蒸馏」生成画像")
+                                st.warning("先到「🧬 我的 → 自我蒸馏」生成画像")
         else:
             with st.spinner("批量匹配中…（每个岗位 20-60 秒）"):
                 bar = st.progress(0.0, text="准备…")
@@ -1374,7 +1256,7 @@ def page_jobs():
                                 + (f"已完成：{fsc}%" if fsc is not None else "未做"))
                     if st.button("① 运行匹配", key=f"f1_{name}"):
                         if not fprof.strip():
-                            st.warning("先到「我的资料 → 自我蒸馏」生成画像")
+                            st.warning("先到「🧬 我的 → 自我蒸馏」生成画像")
                         else:
                             with st.spinner("匹配中…（约 20-60 秒）"):
                                 try:
@@ -1393,7 +1275,7 @@ def page_jobs():
                         if st.button("② 检查简历覆盖", key=f"f2_{name}"):
                             fres = load_my_resume()
                             if not fres.strip():
-                                st.warning("先到「我的资料 → 我的简历」准备一份简历")
+                                st.warning("先到「🎯 找工作 → 简历」准备一份简历")
                             else:
                                 with st.spinner("本地比对中…"):
                                     try:
@@ -1410,28 +1292,19 @@ def page_jobs():
                             if fmiss:
                                 st.caption("缺失：" + "、".join(r["keyword"] for r in fmiss[:12]))
                         st.markdown("**③ 投递话术**")
-                        if st.button("③ 生成话术", key=f"f3_{name}"):
-                            with st.spinner("写话术中…"):
-                                try:
-                                    ftalk, fhits = generate_talk(
-                                        lambda p, *m: ask_chat(p, *m), "boss", fprof, jd)
-                                    st.session_state[f"flow_talk_{name}"] = ftalk
-                                    st.session_state[f"flow_talkhits_{name}"] = fhits
-                                except Exception as e:
-                                    st.error(str(e))
-                        ftalk = st.session_state.get(f"flow_talk_{name}")
-                        if ftalk:
-                            st.code(ftalk, language="text")
-                            fhits = st.session_state.get(f"flow_talkhits_{name}") or []
-                            if fhits:
-                                st.warning(f"仍含可疑用语：{fhits}，建议手动改一版")
+                        st.caption("话术统一在「投递台」生成（避免两套代码）。"
+                                   "这里点一下会跳过去，并已经帮你选中这家。")
+                        if st.button("③ 去投递台写话术", key=f"f3_{name}"):
+                            goto(NAV_WORK, "投递台", focus={"talk_pick": name})
                         st.markdown("**④ 标记已投**")
                         st.caption("发送由你自己按；这里只负责记录状态，之后 7 天没动静会自动进跟进提醒。")
                         if st.button("④ 我发出去了，标记已投", key=f"f4_{name}"):
                             meta["status"] = "已投"
                             meta["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                             save_meta(name, meta)
-                            apply_assist.log_application(name, meta, ftalk or "")
+                            apply_assist.log_application(
+                                name, meta,
+                                st.session_state.get(f"talk_{name}_boss", ""))
                             st.session_state["flow_done"] = name
                             next_step("applied", defer=True)
                             st.rerun()
@@ -1441,10 +1314,7 @@ def page_jobs():
                         st.caption("已标记已投（见页面底部提示）")
         with cols[1]:
             if not excl and st.button("🔍 匹配", key=f"m_{name}"):
-                st.session_state["match_target"] = name
-                st.session_state["_go_nav"] = "🔎 岗位"
-                st.session_state["_jobs_focus"] = "match"
-                st.rerun()
+                goto(NAV_WORK, "匹配分析", focus={"match_pick": name})
         with cols[2]:
             if not excl and st.button("✅ 已投", key=f"d_{name}"):
                 meta["status"] = "已投"
@@ -1576,13 +1446,18 @@ def page_match():
 # ============================================================
 # 页面：投递话术（v2 · 自然口语 + 双版本）
 # ============================================================
-def page_talk():
-    hero("投递话术", "三个场景按真人说话的方式写；生成后自动检查禁用词并重写")
+def page_talk(embedded: bool = False, vkey: str = ""):
+    if not embedded:
+        hero("投递话术", "三个场景按真人说话的方式写；生成后自动检查禁用词并重写")
     jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
     if not jobs:
-        st.info("先到「岗位库」添加岗位")
+        st.info("先到「找工作 → 岗位库」添加岗位")
         return
-    name = st.selectbox("选择岗位", [j[0] for j in jobs], key="talk_pick")
+    _names = [j[0] for j in jobs]
+    _idx = 0
+    if st.session_state.get("talk_pick") in _names:
+        _idx = _names.index(st.session_state["talk_pick"])
+    name = st.selectbox("选择岗位", _names, index=_idx, key="talk_pick")
     jd = read_text(JDS_DIR / f"{name}.txt")
     profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
 
@@ -1599,8 +1474,12 @@ def page_talk():
             st.markdown(st.session_state["highlights"])
 
     labels = [v[0] for v in TALK_VARIANTS.values()]
-    variant = list(TALK_VARIANTS.keys())[labels.index(
-        st.radio("场景", labels, horizontal=True))]
+    if vkey and vkey in TALK_VARIANTS:
+        variant = vkey
+        st.caption(f"话术场景：**{TALK_VARIANTS[variant][0]}**（在上面切换）")
+    else:
+        variant = list(TALK_VARIANTS.keys())[labels.index(
+            st.radio("场景", labels, horizontal=True, key="talk_variant"))]
 
     if st.button("生成话术", type="primary"):
         with st.spinner("生成中…"):
@@ -1686,6 +1565,17 @@ def page_settings():
         write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
         st.success("设置已保存")
     st.markdown("---")
+    st.markdown("##### 🎯 每日投递目标")
+    st.caption("定一个每天要投几家的数，首屏会显示今天的完成进度。"
+               "别定太高——连续投递比一次投很多更重要。")
+    _tgt_now = int(cfg.get("daily_target", 3) or 3)
+    tgt_new = st.number_input("每天投几家", min_value=1, max_value=20,
+                              value=_tgt_now, key="set_target_in")
+    if st.button("保存投递目标", key="set_target_save"):
+        cfg["daily_target"] = int(tgt_new)
+        write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+        st.success(f"已保存：每天 {int(tgt_new)} 家")
+    st.markdown("---")
     st.markdown("##### 💰 花费保护：每天最多调用几次模型")
     st.caption("公开链接被人乱点、或你自己狂跑批量匹配，都是按调用次数烧钱的。"
                "这里设一个每日上限，超过就拒绝调用并提示。填 0 = 不限制。")
@@ -1712,11 +1602,8 @@ def page_settings():
     st.caption("部署到 Streamlit Cloud：Settings → Secrets 填入 "
                "`DEEPSEEK_API_KEY = \"sk-...\"` 即可。")
     st.markdown("---")
-    st.markdown("##### 🔗 分享链接")
-    st.caption("照片和简历模板在「我的资料 → 我的简历」里管理。")
-    st.markdown("**公开名片链接（发给 HR，免密码）**")
-    st.code(public_base_url() + "/?twin=1", language=None)
-    st.caption("主链接（带密码，自己用）：" + public_base_url())
+    st.caption("分享链接、名片页、简历导出都在「📇 展示」页；"
+               "照片、简历正文和模板在「🎯 找工作 → 简历」页。")
     st.markdown("---")
     st.markdown("##### 🔒 访问密码（上线公网前设置）")
     st.caption("设置后访问应用需要先输密码。密码以 SHA-256 哈希保存在本机 config.json，"
@@ -1998,16 +1885,17 @@ def page_my_resume():
                f"`python offeragent\\make_resume_pdf.py --template {tpl_key}`")
 
 
-def page_resume_tailor():
+def page_resume_tailor(embedded: bool = False):
     """按 JD 定制简历 + ATS 关键词覆盖检查。"""
-    hero("简历定制", "按目标岗位检查关键词覆盖，并给重排与改写建议（只重排已有经历，不编）")
+    if not embedded:
+        hero("简历定制", "按目标岗位检查关键词覆盖，并给重排与改写建议（只重排已有经历，不编）")
     jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
     if not jobs:
-        st.info("先到「岗位」添加岗位")
+        st.info("先到「找工作 → 岗位库」添加岗位")
         return
     name = st.selectbox("目标岗位", [j[0] for j in jobs], key="tailor_pick")
     jd = read_text(JDS_DIR / f"{name}.txt")
-    st.caption("简历内容在「我的资料 → 我的简历」里管理；这里默认读你保存的那份。")
+    st.caption("这一步只做检查、不改内容。简历正文和模板在左边「简历内容 / 模板 / 照片」里管理。")
     resume = resume_source_panel("tailor")
 
     if st.button("🔬 检查覆盖 + 给建议（调用 DeepSeek）", type="primary", key="tailor_run"):
@@ -2057,7 +1945,7 @@ def page_drill():
     hero("面试拷问", "AI 当面试官追问你；每答一题给三段反馈。可中断续答")
     jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
     if not jobs:
-        st.info("先到「岗位」添加岗位")
+        st.info("先到「🎯 找工作 → 岗位库」添加岗位")
         return
     name = st.selectbox("针对哪个岗位练", [j[0] for j in jobs], key="drill_pick")
     jd = read_text(JDS_DIR / f"{name}.txt")
@@ -2132,39 +2020,20 @@ def page_drill():
             meta_board = dict((j[0], j[1]) for j in jobs)
             digital_twin.save_review(name, meta_board.get(name, {}).get("company", ""), body)
             st.success(f"已存进复盘库：{name}")
-            st.caption("去「我的资料 → 数字分身 → 面试复盘入库」能看到它，"
-                       "点「提炼画像更新」会给你画像修改建议。")
+        st.caption("去「🧬 我的 → 复盘入库」能看到它，"
+                   "点「提炼画像更新」会给你画像修改建议。")
 
 
 def page_applications():
-    """投递记录 + 漏斗 + 跟进提醒 + 被拒归因。"""
-    hero("投递记录", "漏斗统计、该跟进的、被拒归因，以及每条投递用的话术")
+    """投递记录：每一条投了什么、用了什么话术、该跟进谁。
+
+    统计口径统一收敛到「今天 → 数据与日志」那一页，这里只记录事实，避免同一个数字
+    在三个页面各算一遍。
+    """
+    hero("投递记录", "每一条投了什么、用了什么话术、该跟进谁")
     rows = apply_assist.load_applications()
     all_jobs = list_jobs()
-    applied_jobs = [j for j in all_jobs if j[1]["status"] in ("已投", "面试中", "已拒", "Offer")]
-
-    fn = pipeline.funnel(all_jobs)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("已投出去", fn["submitted"])
-    c2.metric("有回应（面试中/已拒/Offer）", fn["interviewed"])
-    c3.metric("Offer", fn["offers"])
-    c4.metric("今天投递", apply_assist.applied_today())
-    st.caption(f"回应率 {fn['reply_rate']}%　·　Offer 率 {fn['offer_rate']}%"
-               f"　·　统计口径：岗位库里状态为「已投/面试中/已拒/Offer」的岗位")
-    g1, g2 = st.columns(2)
-    with g1:
-        st.markdown("##### 投递转化漏斗")
-        if fn["submitted"] > 0:
-            st.plotly_chart(v41.funnel_fig(fn["submitted"], fn["interviewed"], fn["offers"]),
-                            use_container_width=True)
-        else:
-            st.caption("还没有投递记录，投几份后这里会出现转化漏斗。")
-    with g2:
-        st.markdown("##### 近 14 天投递趋势")
-        if rows:
-            st.plotly_chart(v41.weekly_fig(rows), use_container_width=True)
-        else:
-            st.caption("还没有投递记录。")
+    st.caption(f"共 {len(rows)} 条记录。漏斗和趋势在「🚀 今天 → 数据与日志」里看。")
 
     # 跟进提醒
     follow = pipeline.needs_followup(all_jobs, days=7)
@@ -2173,7 +2042,7 @@ def page_applications():
         for f in follow[:8]:
             st.markdown(f"- **{f['meta'].get('company') or f['name']}** · {f['name']}"
                         f" · 已投 {f['days']} 天")
-        st.caption("跟进话术可以去「投递话术」页用「内推消息」或「BOSS 打招呼」模板改写。")
+        st.caption("跟进话术去「投递台 → 单条精修」用「内推消息」或「BOSS 打招呼」模板改写。")
     else:
         st.caption("暂时没有需要跟进的岗位（投出去满 7 天会自动出现在这里）。")
 
@@ -2257,44 +2126,103 @@ def page_applications():
                 unsafe_allow_html=True)
 
 
+# ============================================================
+# 导航：一级分区 / 二级子页 / 跨页跳转
+# 设计原则：一个动作只有一个入口；功能联动的东西放同一个分区，
+#          并且可以从任何地方「跳过去并定位到那一条」。
+# ============================================================
+NAV_TODAY = "🚀 今天"
+NAV_WORK = "🎯 找工作"
+NAV_ME = "🧬 我的"
+NAV_SHOW = "📇 展示"
+NAV_SETTINGS = "⚙️ 设置"
+
+GROUP_KEY = {
+    NAV_TODAY: "today",
+    NAV_WORK: "work",
+    NAV_ME: "me",
+    NAV_SHOW: "show",
+    NAV_SETTINGS: "settings",
+}
+
+
+def goto(group: str, sub: str = "", focus: dict = None):
+    """跳到另一个分区（可选：定位到二级子页、预选某个下拉框）。
+
+    必须走「待处理标记」——导航控件已经实例化之后再改它的 session_state 会报错，
+    所以这里只登记意图，由 main() 在控件创建之前应用。
+    """
+    st.session_state["_go_nav"] = group
+    if sub:
+        st.session_state["_go_sub"] = (GROUP_KEY.get(group, ""), sub)
+    if focus:
+        st.session_state["_go_focus"] = focus
+    st.rerun()
+
+
+def subnav(group_key: str, options: list, default: str) -> str:
+    """二级导航：会话状态控制，所以跨页跳转能直接改写它。"""
+    k = f"subnav_{group_key}"
+    if st.session_state.get(k) not in options:
+        st.session_state[k] = default
+    picked = st.segmented_control("", options, key=k, label_visibility="collapsed")
+    return picked or st.session_state[k]
+
+
 def group_today():
-    t1, t2, t3 = st.tabs(["今日行动", "求职日报", "数据概览"])
-    with t1:
+    sub = subnav("today", ["今日行动", "数据与日志"], "今日行动")
+    if sub == "数据与日志":
+        page_data_log()
+    else:
         page_today()
-    with t2:
-        page_report()
-    with t3:
-        page_dashboard()
 
 
-def group_jobs():
-    if st.session_state.get("_jobs_focus") == "match":
-        if st.button("← 回岗位库列表", key="back_jobs"):
-            st.session_state.pop("_jobs_focus", None)
-            st.rerun()
+def group_work():
+    sub = subnav("work", ["岗位库", "匹配分析", "简历", "投递台", "投递记录"], "岗位库")
+    if sub == "匹配分析":
         page_match()
-        return
-    t1, t2, t3, t4 = st.tabs(["岗位库 / 关键词搜岗", "匹配分析", "岗位对比", "公司速查"])
-    with t1:
+    elif sub == "简历":
+        page_resume_hub()
+    elif sub == "投递台":
+        page_apply_desk()
+    elif sub == "投递记录":
+        page_applications()
+    else:
         page_jobs()
-    with t2:
-        page_match()
-    with t3:
-        page_compare()
-    with t4:
-        page_company()
+
+
+def group_me():
+    """关于我的一切：画像（自我蒸馏）→ 面试准备 → 复盘写回画像。一个闭环。"""
+    sub = subnav("me", ["自我蒸馏", "面试拷问", "分身陪练", "复盘入库"], "面试拷问")
+    profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
+    if sub == "自我蒸馏":
+        distill_section()
+    elif sub == "分身陪练":
+        twin_practice_section(profile)
+    elif sub == "复盘入库":
+        twin_review_section(profile)
+    else:
+        page_drill()
+
+
+def group_show():
+    page_show()
+
+
+def group_settings():
+    page_settings()
 
 
 
 # ============================================================
 # 页面：批量投递台（半自动——话术/链接/三件套全备好，发送那一下留给你）
 # ============================================================
-def page_batch_apply():
-    hero("批量投递", "全部待投岗位：批量生成话术 → 逐条确认 → 复制 / 打开 / 标记已投。"
-                    "发送那一下永远留给你（自动群发会被平台风控封号）")
+def page_batch_apply(vkey: str = "boss"):
+    st.caption("批量模式：一次给全部待投岗位生成话术 → 逐条确认 → 复制 / 打开 / 标记已投。"
+               "发送那一下永远留给你（自动群发会被平台风控封号）。")
     jobs = [j for j in list_jobs() if j[1]["status"] == "待投"]
     if not jobs:
-        st.info("当前没有待投岗位。去「🔎 岗位」把岗位状态设为「待投」。")
+        st.info("当前没有待投岗位。去「找工作 → 岗位库」把岗位状态设为「待投」。")
         return
     st.markdown(f"待投 **{len(jobs)}** 家　·　今日已投 **{apply_assist.applied_today()}** 家")
 
@@ -2302,14 +2230,14 @@ def page_batch_apply():
     if c1.button("⚡ 批量生成全部话术", type="primary", key="bg_gen"):
         fprof = read_text(PROFILE_PATH) or read_text(ME_PATH)
         if not fprof.strip():
-            st.warning("先到「我的资料 → 自我蒸馏」生成画像")
+            st.warning("先到「🧬 我的 → 自我蒸馏」生成画像")
         else:
             queue = {}
-            with st.spinner(f"为 {len(jobs)} 家生成 BOSS 话术…（每家几秒）"):
+            with st.spinner(f"为 {len(jobs)} 家生成话术…（每家几秒）"):
                 for n, m, jd in jobs:
                     try:
                         t, h = generate_talk(lambda p, *mm: ask_chat(p, *mm),
-                                             "boss", fprof, jd or "")
+                                             vkey, fprof, jd or "")
                         queue[n] = {"talk": t, "hits": h}
                     except Exception as e:
                         queue[n] = {"talk": "", "hits": [str(e)[:80]]}
@@ -2359,29 +2287,39 @@ def page_batch_apply():
 
 
 
-def group_apply():
-    t1, t2, t3, t4, t5 = st.tabs(
-        ["投递话术", "简历定制 / ATS", "面试拷问", "投递记录", "⚡ 批量投递"])
-    with t1:
-        page_talk()
-    with t2:
-        page_resume_tailor()
-    with t3:
-        page_drill()
-    with t4:
-        page_applications()
-    with t5:
-        page_batch_apply()
-
-
-def group_distill():
-    # 注意：问答式用了 st.chat_input，必须放在页面级（不能塞进 tab），所以这里用 radio 切
+def distill_section():
+    """自我蒸馏（问答式 / 填表式）。chat_input 必须在页面级，所以用 radio 切换。"""
     mode = st.radio("模式", ["💬 问答式（推荐）", "📋 填表式"],
                     horizontal=True, key="distill_mode")
     if "问答" in mode:
         page_distill_chat()
     else:
         page_profile()
+
+
+def page_resume_hub():
+    """简历：内容 + 模板 + 照片 + 按岗位做 ATS 覆盖检查，全在这一页。"""
+    sub = subnav("resume", ["简历内容 / 模板 / 照片", "按岗位检查覆盖"],
+                 "简历内容 / 模板 / 照片")
+    if sub.startswith("按岗位"):
+        page_resume_tailor(embedded=True)
+    else:
+        page_my_resume()
+
+
+def page_apply_desk():
+    """投递台：全应用唯一生成投递话术的地方（单条精修 / 批量一次到位）。"""
+    hero("投递台", "话术、岗位链接、投递三件套一次备好；发送那一下由你自己按")
+    labels = [v[0] for v in TALK_VARIANTS.values()]
+    vlabel = st.segmented_control("话术场景", labels, default=labels[0],
+                                  key="desk_variant") or labels[0]
+    vkey = list(TALK_VARIANTS.keys())[labels.index(vlabel)]
+    sub = subnav("apply", ["批量（一次处理全部待投）", "单条精修（三版可改）"],
+                 "批量（一次处理全部待投）")
+    if sub.startswith("单条"):
+        page_talk(embedded=True, vkey=vkey)
+    else:
+        page_batch_apply(vkey=vkey)
 
 
 
@@ -2467,7 +2405,7 @@ def page_twin_portal():
     me = read_text(ME_PATH)
     if not profile.strip():
         st.warning("画像还没生成，名片页暂不可用。")
-        st.caption("（给余剑本人：进主界面 →「我的资料 → 自我蒸馏」答完 15 题即可）")
+        st.caption("（给余剑本人：进主界面 →「🧬 我的 → 自我蒸馏」答完 15 题即可）")
         return
 
     av = avatar_bytes()
@@ -2609,268 +2547,169 @@ def page_twin_portal():
                "你的提问只用于当场回答，不写入他的数据文件。")
 
 
-def _legacy_twin_portal_unused():
-    """旧版名片页（三个 tab），保留作参考，不再调用。新版见 page_twin_portal()。"""
-    profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
-    me = read_text(ME_PATH)
-    if not profile.strip():
-        st.warning("画像未生成，先去「我的资料 → 自我蒸馏」。")
-        return
-
-    # ---- 名片头 ----
-    st.markdown(
-        '<div style="padding:14px 20px;border-radius:14px;'
-        'background:linear-gradient(135deg,#10131a,#1b2a4a);color:#fff;'
-        'display:flex;align-items:center;gap:16px;flex-wrap:wrap;">'
-        '<div style="font-size:34px;">🧑\u200d💻</div>'
-        '<div><div style="font-size:22px;font-weight:700;">余剑 · AI 应用开发实习生</div>'
-        '<div style="opacity:.82;font-size:13px;">南京邮电大学 · 网络工程 2027 届 · 南京优先，可远程 · LLM / RAG / Agent</div>'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "🪞 这是余剑的 **AI 数字分身**，不是一个静态简历页。三个页签按顺序看："
-        "**① 我是谁**（基本盘）→ **② 项目证据**（可点开验证的作品 + 简历 PDF）→ "
-        "**③ 问数字人**（直接问他任何问题，他基于真实画像回答；画像里没有的会直说没有）。"
-        "最终以本人沟通为准。")
-
-    tabs = st.tabs(["🧑\u200d💻 我是谁", "🚀 项目证据", "💬 问数字人"])
-
-    # ---- 我是谁 ----
-    with tabs[0]:
-        st.markdown("#### 基本信息")
-        base = [
-            ("学历", "南京邮电大学 · 网络工程 · 本科 · 2027 届"),
-            ("坐标", "南京（南京 onsite 优先，可远程）"),
-            ("求职方向", "AI 应用开发 / Agent 开发实习；次选大模型评测"),
-            ("到岗", "2026.09 下旬起 · 4–5 天/周 · 可 3–6 个月"),
-            ("邮箱", "yj2994762833@gmail.com"),
-        ]
-        for k, v in base:
-            st.markdown(f"**{k}**　{v}")
-        st.markdown("---")
-        st.markdown("#### 技能与项目（数字人记忆）")
-        if me:
-            # 只取 me.txt 里给"人看"的部分
-            body = me
-            for mark in ["## 硬约束", "## 我想找什么岗位"]:
-                i = body.find(mark)
-                if i > 0:
-                    body = body[:i]
-            st.markdown(body)
-        else:
-            with st.expander("查看画像全文", expanded=False):
-                st.markdown(profile)
-
-    # ---- 项目证据 ----
-    with tabs[1]:
-        st.markdown("#### 可点开验证的项目")
-        st.markdown(
-            '<div style="padding:14px 18px;border:1px solid #e4e3dd;border-radius:12px;margin-bottom:10px;">'
-            '<div style="font-weight:700;">🌐 上线项目 · RAG 知识库问答系统</div>'
-            '<div style="font-size:13px;color:#5f6670;">11 篇资料 → 254 块向量库 · top-1/3/5 命中率 75% / 83% / 92% · 带引用溯源 · 公开可访问</div>'
-            '<a href="https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/" style="font-size:13px;">打开应用 →</a>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div style="padding:14px 18px;border:1px solid #e4e3dd;border-radius:12px;margin-bottom:10px;">'
-            '<div style="font-weight:700;">📦 GitHub 代码仓库</div>'
-            '<div style="font-size:13px;color:#5f6670;">RAG 全链路 + Agent 工具调用 + OfferAgent 求职智能体（本名片就是它的功能之一）</div>'
-            '<a href="https://github.com/yjmyp/ai-learning" style="font-size:13px;">github.com/yjmyp/ai-learning →</a>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        pdf_path = Path(__file__).resolve().parent.parent / "简历" / "余剑-应聘AI应用开发实习-本科.pdf"
-        if pdf_path.exists():
-            try:
-                st.download_button("📄 下载简历 PDF", data=pdf_path.read_bytes(),
-                                   file_name="余剑-应聘AI应用开发实习-本科.pdf",
-                                   mime="application/pdf", key="dl_pdf")
-            except Exception:
-                st.caption("（简历 PDF 暂不可用，可邮件索取）")
-        else:
-            st.caption("（简历 PDF 待上传）")
-        st.markdown("---")
-        st.markdown("#### 想知道更深入的？")
-        st.caption("在「💬 问数字人」里问它：项目怎么做、踩过什么坑、网络工程背景怎么结合 AI……")
-
-    # ---- 问数字人 ----
-    with tabs[2]:
-        st.markdown("#### 问他任何问题")
-        st.caption("回答由 AI 基于他的真实画像实时生成；若画像里没有，它会直接说没有。")
-        preset = st.selectbox(
-            "预设问题（先试试这些）",
-            ["", "介绍下你的 RAG 项目，做了什么、做到什么程度",
-             "你做过 Agent 相关的东西吗？",
-             "你的网络工程背景对做 AI 应用有什么帮助？",
-             "你最大的短板是什么？",
-             "为什么想投 AI 应用开发实习？",
-             "你怎么评估你的 RAG 系统效果？"],
-            key="portal_preset")
-        q = st.text_area("或输入你自己的问题", key="portal_q", height=80,
-                         placeholder="例：你的 RAG 系统如果检索出来全是错的，怎么办？")
-        ask_what = (q.strip() or preset).strip()
-        if st.button("让数字人回答", type="primary", key="portal_go"):
-            if not ask_what:
-                st.warning("先选预设问题或输入问题")
-            else:
-                with st.spinner("数字分身思考中…"):
-                    try:
-                        st.session_state["portal_last"] = (
-                            ask_what,
-                            digital_twin.twin_answer(profile, ask_what,
-                                                     lambda p: ask_chat(p)),
-                        )
-                    except Exception as e:
-                        st.error(str(e))
-        last = st.session_state.get("portal_last")
-        if last:
-            st.markdown(f"**问：** {last[0]}")
-            st.markdown(
-                f'<div class="oa-card" style="margin-top:6px;">💬 数字人：{last[1]}</div>',
-                unsafe_allow_html=True,
-            )
-            st.caption("提示：以上回答基于公开画像生成。正式沟通请直接联系本人。")
-
-
 # ============================================================
 # 页面：数字分身（合规版：替你准备，真人上场）
 # ============================================================
-def page_twin():
-    hero("数字分身", "你的画像 + 简历 + 复盘 = 分身。它替你准备，真人上场的是你")
-    profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
+def twin_practice_section(profile: str):
+    """分身陪练：拿画像当记忆，练参考话术、准备自我介绍和反问清单。"""
+    hero("分身陪练", "它用你的画像当记忆，替你先答一版；真人上场的是你")
     if not profile.strip():
-        st.warning("先到「🧬 自我蒸馏」生成画像，分身才有「记忆」。")
+        st.warning("先去「🧬 我的 → 自我蒸馏」生成画像，分身才有记忆。")
+        if st.button("现在去蒸馏", key="to_distill"):
+            goto(NAV_ME, "自我蒸馏")
         return
-    t1, t2, t3 = st.tabs(["🪞 分身档案", "🎤 面试陪练", "🧠 复盘与进化"])
+    with st.expander("📄 分身当前记忆（画像全文）", expanded=False):
+        st.markdown(profile)
+    st.markdown("##### 让分身替你答一版")
+    st.caption("这是参考话术，不是替考。你本人上场时用自己的话说会更自然。")
+    q = st.text_area("你的问题（面试里卡住的问题也可以扔给它）", key="twin_q",
+                     placeholder="例：你的 RAG 系统如果检索出来全是错的，怎么办？")
+    if st.button("让分身回答", type="primary", key="twin_go"):
+        with st.spinner("分身思考中…"):
+            try:
+                st.session_state["twin_a"] = digital_twin.twin_answer(
+                    profile, q.strip(), lambda p: ask_chat(p))
+            except Exception as e:
+                st.error(str(e))
+    a = st.session_state.get("twin_a", "")
+    if a:
+        st.markdown(f'<div class="oa-card">💬 分身：{a}</div>', unsafe_allow_html=True)
+        st.caption("对照你自己的答法：它哪里更具体？哪句你没想到？")
 
-    with t1:
-        st.markdown("### 分身是什么")
-        st.caption("分身 = 你的画像（事实）+ 你的简历（证明）+ 你的复盘（记忆）。"
-                   "它可以陪你练面试、替你定制话术、帮你复盘进化，"
-                   "但**不会替你本人去面试，也不会替你按下发送**。")
-        with st.expander("📄 分身当前记忆（画像全文）", expanded=False):
-            st.markdown(profile)
-
-    with t2:
-        mode = st.radio("陪练模式",
-                        ["🪞 扮演我（你出题，分身用你的事实回答，学参考话术）",
-                         "🎤 模拟面试官（AI 出 10 题逐题拷问）"],
-                        horizontal=True)
-        if "扮演我" in mode:
-            st.caption("这是参考回答，不是替考。你本人上场时，用自己的话说会更真实。")
-            q = st.text_area("你的问题（面试里卡住的问题也可以扔给它）", key="twin_q",
-                             placeholder="例：你的 RAG 系统如果检索出来全是错的，怎么办？")
-            if st.button("让分身回答", type="primary", key="twin_go"):
-                with st.spinner("分身思考中…"):
-                    try:
-                        st.session_state["twin_a"] = digital_twin.twin_answer(
-                            profile, q.strip(), lambda p: ask_chat(p))
-                    except Exception as e:
-                        st.error(str(e))
-            a = st.session_state.get("twin_a", "")
-            if a:
-                st.markdown(f'<div class="oa-card">💬 分身：{a}</div>', unsafe_allow_html=True)
-                st.caption("对照你自己的答法：它哪里更具体？哪句你没想到？")
-        else:
-            st.info("模拟面试官（10 题拷问 + 逐题点评 + 总评）在「✉️ 投递 → 面试拷问」。"
-                    "建议流程：先陪练扮演我学话术 → 再上拷问模式被虐 → 复盘写回画像。")
-        st.markdown("---")
-        st.markdown("##### 📝 投前定制（自我介绍 / 反问清单）")
-        jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
-        if jobs:
-            iname = st.selectbox("选择岗位", [j[0] for j in jobs], key="twin_job")
-            icomp = dict((j[0], j[1].get("company") or j[0]) for j in jobs)[iname]
-            ijd = read_text(JDS_DIR / f"{iname}.txt")
-            c1, c2 = st.columns(2)
-            if c1.button("生成自我介绍（30s/60s/90s）", key="intro_go"):
-                with st.spinner("定制中…"):
-                    try:
-                        st.session_state["intro_out"] = digital_twin.make_intro(
-                            profile, icomp, ijd, lambda p: ask_chat(p))
-                    except Exception as e:
-                        st.error(str(e))
-            if c2.button("生成反问清单（10 问）", key="askback_go"):
-                with st.spinner("生成中…"):
-                    try:
-                        st.session_state["askback_out"] = digital_twin.questions_to_ask(
-                            profile, ijd, lambda p: ask_chat(p))
-                    except Exception as e:
-                        st.error(str(e))
-            io = st.session_state.get("intro_out", "")
-            if io:
-                st.markdown(io)
-            ao = st.session_state.get("askback_out", "")
-            if ao:
-                st.markdown(ao)
-        else:
-            st.caption("先到「岗位库」添加岗位，才能按目标公司定制。")
-
-    with t3:
-        st.markdown("##### 🧠 面试复盘入库（让分身记住你）")
-        st.caption("每场面试后花 2 分钟记下来，分身提炼「被认可/被挑战」，画像越用越准。")
-        rjobs = [(n, m) for n, m, _ in list_jobs() if m["status"] != "排除"]
-        rname = st.selectbox("复盘哪个岗位", [n for n, _ in rjobs] if rjobs else [""],
-                             key="rev_job")
-        rcomp = dict(rjobs).get(rname, "")
-        rtext = st.text_area("复盘内容（问了什么 / 哪里卡住 / 对方反应 / 你答得怎么样）",
-                             key="rev_text", height=140)
-        if st.button("保存复盘 + 提炼画像更新", type="primary", key="rev_save"):
-            if not rtext.strip():
-                st.warning("先写复盘内容")
-            else:
-                digital_twin.save_review(rname, rcomp, rtext)
-                with st.spinner("提炼画像更新建议…"):
-                    try:
-                        st.session_state["rev_adv"] = digital_twin.evolve_profile(
-                            profile, rtext, lambda p: ask_chat(p))
-                        st.session_state["rev_done"] = True
-                    except Exception as e:
-                        st.error(str(e))
-        if st.session_state.get("rev_done"):
-            st.success(f"已保存复盘：{rname}")
-        ra = st.session_state.get("rev_adv", "")
-        if ra:
-            st.markdown(ra)
-            st.caption("（更新建议由你确认后再手动写进画像/简历，分身不自动改你的画像）")
-        reviews = digital_twin.load_reviews()
-        if reviews:
-            with st.expander(f"📚 历史复盘（{len(reviews)} 条）"):
-                for r in reviews[:20]:
-                    st.markdown(f"**{r['company'] or r['job']}** · {r['date']}")
-                    st.caption((r["review"] or "")[:200])
-        st.markdown("---")
-        st.markdown("##### 📡 反向岗位雷达")
-        st.caption("从你的画像反推「哪些岗位类型最适合你、搜什么关键词、去哪投」。")
-        if st.button("从画像反推适合我的岗位类型", key="radar_go"):
-            with st.spinner("分析中…"):
+    st.markdown("---")
+    st.markdown("##### 投前定制（自我介绍 / 反问清单）")
+    jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
+    if jobs:
+        iname = st.selectbox("选择岗位", [j[0] for j in jobs], key="twin_job")
+        icomp = dict((j[0], j[1].get("company") or j[0]) for j in jobs)[iname]
+        ijd = read_text(JDS_DIR / f"{iname}.txt")
+        c1, c2 = st.columns(2)
+        if c1.button("生成自我介绍（30s/60s/90s）", key="intro_go"):
+            with st.spinner("定制中…"):
                 try:
-                    st.session_state["radar_out"] = digital_twin.job_radar(
-                        profile, lambda p: ask_chat(p))
+                    st.session_state["intro_out"] = digital_twin.make_intro(
+                        profile, icomp, ijd, lambda p: ask_chat(p))
                 except Exception as e:
                     st.error(str(e))
-        ro = st.session_state.get("radar_out", "")
-        if ro:
-            st.markdown(ro)
-
-
-
-
-def group_me():
-    """我的资料：简历本身 + 自我蒸馏（画像 / 数字分身）。"""
-    mode = st.radio("内容", ["📄 我的简历", "🧬 自我蒸馏", "🪞 数字分身"],
-                    horizontal=True, key="me_mode")
-    if "简历" in mode:
-        page_my_resume()
-    elif "数字分身" in mode:
-        page_twin()
+        if c2.button("生成反问清单（10 问）", key="askback_go"):
+            with st.spinner("生成中…"):
+                try:
+                    st.session_state["askback_out"] = digital_twin.questions_to_ask(
+                        profile, ijd, lambda p: ask_chat(p))
+                except Exception as e:
+                    st.error(str(e))
+        if st.session_state.get("intro_out"):
+            st.markdown(st.session_state["intro_out"])
+        if st.session_state.get("askback_out"):
+            st.markdown(st.session_state["askback_out"])
     else:
-        group_distill()
+        st.caption("先到「🎯 找工作 → 岗位库」添加岗位，才能按目标公司定制。")
+
+
+def twin_review_section(profile: str):
+    """复盘入库：面试后记下来，提炼成画像更新建议，让分身越用越准。"""
+    hero("复盘入库", "每场面试后花 2 分钟记下来，分身提炼画像更新建议")
+    if not profile.strip():
+        st.warning("先去「🧬 我的 → 自我蒸馏」生成画像。")
+        return
+    rjobs = [(n, m) for n, m, _ in list_jobs() if m["status"] != "排除"]
+    rname = st.selectbox("复盘哪个岗位", [n for n, _ in rjobs] if rjobs else [""],
+                         key="rev_job")
+    rcomp = dict(rjobs).get(rname, "")
+    rtext = st.text_area("复盘内容（问了什么 / 哪里卡住 / 对方反应 / 你答得怎么样）",
+                         key="rev_text", height=140)
+    if st.button("保存复盘 + 提炼画像更新", type="primary", key="rev_save"):
+        if not rtext.strip():
+            st.warning("先写复盘内容")
+        else:
+            digital_twin.save_review(rname, rcomp, rtext)
+            with st.spinner("提炼画像更新建议…"):
+                try:
+                    st.session_state["rev_adv"] = digital_twin.evolve_profile(
+                        profile, rtext, lambda p: ask_chat(p))
+                    st.session_state["rev_done"] = True
+                except Exception as e:
+                    st.error(str(e))
+    if st.session_state.get("rev_done"):
+        st.success(f"已保存复盘：{rname}")
+    if st.session_state.get("rev_adv"):
+        st.markdown(st.session_state["rev_adv"])
+        st.caption("（更新建议由你确认后再手动写进画像/简历，分身不会自动改你的画像）")
+    reviews = digital_twin.load_reviews()
+    if reviews:
+        with st.expander(f"📚 历史复盘（{len(reviews)} 条）"):
+            for r in reviews[:20]:
+                st.markdown(f"**{r['company'] or r['job']}** · {r['date']}")
+                st.caption((r["review"] or "")[:200])
+    st.markdown("---")
+    st.markdown("##### 📡 反向岗位雷达")
+    st.caption("从你的画像反推「哪些岗位类型最适合你、搜什么关键词、去哪投」。")
+    if st.button("从画像反推适合我的岗位类型", key="radar_go"):
+        with st.spinner("分析中…"):
+            try:
+                st.session_state["radar_out"] = digital_twin.job_radar(
+                    profile, lambda p: ask_chat(p))
+            except Exception as e:
+                st.error(str(e))
+    if st.session_state.get("radar_out"):
+        st.markdown(st.session_state["radar_out"])
+
+
+def page_show():
+    """对外展示：HR 会看到的都在这一页（名片链接、简历 PDF、素材自检）。"""
+    hero("对外展示", "HR 会看到的都在这一页：公开名片、简历 PDF、分享链接")
+    base = public_base_url()
+    twin_url = base + "/?twin=1"
+    av = find_avatar()
+    pdf = _resume_pdf_path()
+
+    with st.container(border=True):
+        st.markdown("#### 对外素材自检")
+        items = [
+            ("个人照片", bool(av), "简历和名片都用这一张"),
+            ("个人画像", PROFILE_PATH.exists(), "生成过一次就行"),
+            ("我的简历", MY_RESUME_PATH.exists(), "保存过就算就绪"),
+            ("简历 PDF", bool(pdf), "HR 下载的就是这份"),
+        ]
+        cols = st.columns(4)
+        for col, (label, ok, hint) in zip(cols, items):
+            col.markdown(f"**{label}**\n\n" + ("✅ 已就绪" if ok else "❌ 还没有"))
+            col.caption(hint)
+        if not all(ok for _, ok, _ in items):
+            if st.button("去补齐（照片 / 简历 / 模板）", key="show_fix"):
+                goto(NAV_WORK, "简历")
+
+    with st.container(border=True):
+        st.markdown("#### 公开数字名片（免密）")
+        st.caption("发给 HR、同学或群里，对方打开就是你自己的 AI 名片页，不需要密码。"
+                   "右边有复制按钮。")
+        st.code(twin_url, language=None)
+        with st.container(horizontal=True):
+            st.link_button("打开看看 HR 看到的样子", twin_url,
+                           icon=":material/open_in_new:")
+            if pdf:
+                st.download_button("下载简历 PDF", pdf.read_bytes(),
+                                   file_name=pdf.name, mime="application/pdf",
+                                   key="show_pdf", icon=":material/download:")
+
+    with st.container(border=True):
+        st.markdown("#### 简历 PDF")
+        if pdf:
+            st.caption(f"当前对外的是：{pdf.name}（三种模板都在「找工作 → 简历」里切换，"
+                       "换完用 make_resume_pdf.py 重新导出）")
+        else:
+            st.caption("还没有导出过 PDF。")
+        if st.button("去换模板 / 重新导出", key="show_tpl"):
+            goto(NAV_WORK, "简历")
+
+    with st.container(border=True):
+        st.markdown("#### 你自己的工作台（要密码）")
+        st.code(base + "/", language=None)
+        st.caption("这条是主链接，有密码保护。对外只发上面那条带 `?twin=1` 的。")
 
 
 def pipeline_bar():
-    """顶部流程进度条：找岗 → 匹配 → 已投 → 有回应。看清自己卡在哪一步。"""
+    """顶部流程条：一行看完自己在哪一步（不抢统计页的活）。"""
     jobs = list_jobs()
     total = len(jobs)
     matched = sum(1 for _, m, _ in jobs if m.get("match_score") is not None)
@@ -2878,21 +2717,23 @@ def pipeline_bar():
                   if m["status"] in ("已投", "面试中", "已拒", "Offer"))
     replied = sum(1 for _, m, _ in jobs
                   if m["status"] in ("面试中", "已拒", "Offer"))
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("① 找岗（入库）", total)
-    c2.metric("② 跑过匹配", matched)
-    c3.metric("③ 已投出去", applied)
-    c4.metric("④ 有回应", replied)
     try:
         tgt = int(json.loads(read_text(CONFIG_PATH, "{}")).get("daily_target", 3) or 3)
     except Exception:
         tgt = 3
     today = apply_assist.applied_today()
-    if today >= tgt:
-        st.success(f"今天的投递目标已完成：{today} / {tgt} 家")
-    else:
-        st.info(f"今天投递 {today} / {tgt} 家，还差 {tgt - today} 家。"
-                "投递是唯一能把上面这些数字变成「有回应」的动作。")
+    st.markdown(
+        f'<div class="oa-flow">'
+        f'<span class="oa-flow-step">① 找岗 <b>{total}</b></span>'
+        f'<span class="oa-flow-arrow">→</span>'
+        f'<span class="oa-flow-step">② 跑过匹配 <b>{matched}</b></span>'
+        f'<span class="oa-flow-arrow">→</span>'
+        f'<span class="oa-flow-step">③ 已投 <b>{applied}</b></span>'
+        f'<span class="oa-flow-arrow">→</span>'
+        f'<span class="oa-flow-step">④ 有回应 <b>{replied}</b></span>'
+        f'<span class="oa-flow-today">今天 {today} / {tgt}'
+        f'{"　✅ 达标" if today >= tgt else "　还差 " + str(tgt - today) + " 家"}</span>'
+        f'</div>', unsafe_allow_html=True)
 
 
 def _is_cloud() -> bool:
@@ -2978,7 +2819,7 @@ def main():
 
     with st.sidebar:
         st.markdown("## 🎯 OfferAgent")
-        st.caption("求职工作台 · v4")
+        st.caption("求职工作台 · v5（结构重排版）")
         picked_theme = st.selectbox("界面风格（可切换对比）", theme_names,
                                     index=theme_names.index(theme_now),
                                     key="theme_pick")
@@ -2987,12 +2828,18 @@ def main():
             write_text(CONFIG_PATH, json.dumps(_cfg, ensure_ascii=False, indent=2))
             st.rerun()
         st.divider()
-        # 待跳转的导航（在 widget 创建前设置才合法）
+        # 跨页跳转：在 widget 创建之前把「待处理意图」落进 session_state 才合法
         _go = st.session_state.pop("_go_nav", None)
         if _go:
             st.session_state["nav"] = _go
-        nav = st.radio("导航",
-                       ["🚀 今日", "📋 我的资料", "🔎 岗位", "✉️ 投递", "⚙️ 设置"],
+        _go_sub = st.session_state.pop("_go_sub", None)
+        if _go_sub and _go_sub[0]:
+            st.session_state[f"subnav_{_go_sub[0]}"] = _go_sub[1]
+        _go_focus = st.session_state.pop("_go_focus", None)
+        if _go_focus:
+            for _wk, _wv in _go_focus.items():
+                st.session_state[_wk] = _wv
+        nav = st.radio("导航", [NAV_TODAY, NAV_WORK, NAV_ME, NAV_SHOW, NAV_SETTINGS],
                        key="nav")
         st.divider()
         jobs_all = list_jobs()
@@ -3007,16 +2854,17 @@ def main():
         st.caption("今天模型调用：**不限**" if _lim <= 0
                    else f"今天模型调用：**{_lim - _left} / {_lim}** 次")
         st.divider()
-        st.caption("搜岗 → 匹配 → 话术 → 投递 → 复盘")
+        st.caption("今天 → 找工作（岗位/匹配/简历/投递台/记录）")
+        st.caption("我的（蒸馏/面试/分身/复盘）→ 展示 → 设置")
 
     pages = {
-        "🚀 今日": group_today,
-        "📋 我的资料": group_me,
-        "🔎 岗位": group_jobs,
-        "✉️ 投递": group_apply,
-        "⚙️ 设置": page_settings,
+        NAV_TODAY: group_today,
+        NAV_WORK: group_work,
+        NAV_ME: group_me,
+        NAV_SHOW: group_show,
+        NAV_SETTINGS: group_settings,
     }
-    if nav != "⚙️ 设置":
+    if nav != NAV_SETTINGS:
         pipeline_bar()
         st.divider()
     pages.get(nav, group_today)()

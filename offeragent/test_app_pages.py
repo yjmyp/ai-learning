@@ -22,7 +22,7 @@ import browser_fetch as bf  # noqa: E402
 from job_sources import html_to_text  # noqa: E402
 
 OUT_DIR = HERE / "data" / "shots"
-NAV = ["今日", "我的资料", "岗位", "投递", "设置"]
+NAV = ["今天", "找工作", "🧬 我的", "展示", "设置"]
 ERR_KWS = ["Traceback", "StreamlitDuplicateElementId", "KeyError",
            "AttributeError", "NameError", "TypeError", "ValueError",
            "ModuleNotFoundError", "st.error"]

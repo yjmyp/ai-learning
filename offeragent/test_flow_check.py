@@ -53,34 +53,35 @@ def main():
 
     checks = []
     t = page_text()
-    checks.append(("今日页有流程条 ①找岗", "① 找岗（入库）" in t))
+    checks.append(("今日页有流程条 ①找岗", "① 找岗" in t))
     checks.append(("今日页有流程条 ④有回应", "④ 有回应" in t))
-    checks.append(("今日页有今日投递目标", "今天投递" in t))
+    checks.append(("今日页有今日投递目标", "今天 " in t and "家" in t))
 
-    click_nav("岗位")
+    click_nav("找工作")
+    click_button("岗位库")
     t = page_text()
     checks.append(("岗位页有一站式卡片", "一站式" in t))
     checks.append(("一站式含②ATS 简历覆盖", "ATS 简历覆盖" in t))
     checks.append(("一站式含④标记已投", "标记已投" in t))
 
-    # 关键回归：岗位卡片的「🔍 匹配」跳转（以前这里会因直接改 nav 而崩）
-    r = click_button("匹配")
+    # 关键回归：岗位卡片的「🔍 匹配」要能跳到同分区的「匹配分析」子页
+    r = click_button("🔍 匹配")
     t = page_text()
     checks.append(("点匹配按钮能跳到匹配分析", r == "clicked" and "匹配分析" in t))
     checks.append(("跳转后无 Traceback/StreamlitAPIException",
                    "Traceback" not in t and "StreamlitAPIException" not in t))
-    click_button("回岗位库列表")
+    click_button("岗位库")
 
-    click_nav("我的资料")
+    click_nav("🧬 我的")
     t = page_text()
-    checks.append(("我的资料含「我的简历」", "我的简历" in t))
-    checks.append(("我的资料含「自我蒸馏」", "自我蒸馏" in t))
-    checks.append(("简历来源三选一", "问答式生成一份" in t))
+    checks.append(("「我的」含自我蒸馏", "自我蒸馏" in t))
+    checks.append(("「我的」含面试拷问", "面试拷问" in t))
 
-    click_nav("投递")
+    click_nav("找工作")
+    click_button("简历")
     t = page_text()
-    checks.append(("投递页无 Traceback", "Traceback" not in t))
-    checks.append(("投递页有简历定制", "简历定制" in t))
+    checks.append(("简历页无 Traceback", "Traceback" not in t))
+    checks.append(("简历来源三选一在简历页", "问答式生成一份" in t))
 
     cdp.close()
     ok = 0

@@ -446,6 +446,21 @@ CSS_D = """
 }
 .oa-side-stat b { color: var(--ink); font-weight: 650; }
 
+/* 顶部流程条：一行看清自己在哪一步 */
+.oa-flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  background: #FFFFFF; border: 1px solid var(--line); border-radius: 11px;
+  padding: 9px 14px; font-size: 12.5px; color: var(--muted);
+}
+.oa-flow-step { color: var(--muted); }
+.oa-flow-step b { color: var(--ink); font-weight: 650; margin-left: 2px; }
+.oa-flow-arrow { color: #C3CBD8; }
+.oa-flow-today {
+  margin-left: auto; padding: 2px 10px; border-radius: 999px;
+  background: var(--brand-soft, #EFF4FF); color: var(--brand, #1D4ED8);
+  font-weight: 600;
+}
+
 /* ---------- 排版 ---------- */
 html, body, [class*="css"] { font-size: 15.5px; }
 h1, h2, h3 { color: var(--ink); line-height: 1.4; }

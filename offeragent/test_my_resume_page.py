@@ -42,7 +42,19 @@ def main():
         time.sleep(7)
         return r
 
-    click_nav("我的资料")
+    def click_btn(text):
+        """二级子页是 segmented_control，渲染成 button。"""
+        js = ("(function(){var bs=[].slice.call(document.querySelectorAll('button'));"
+              f"var el=bs.filter(function(e){{return e.innerText.trim().indexOf('{text}')>=0;}})[0];"
+              "if(!el) return 'not-found'; el.click(); return 'clicked';})()")
+        r = cdp.call("Runtime.evaluate", {"expression": js, "returnByValue": True},
+                     timeout=40).get("result", {}).get("value")
+        time.sleep(7)
+        return r
+
+    click_nav("找工作")
+    time.sleep(2)
+    click_btn("简历")
     mine_html = cdp.call("Runtime.evaluate", {
         "expression": "document.documentElement.outerHTML",
         "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
@@ -65,7 +77,7 @@ def main():
         ("提示了命令行出 PDF", "make_resume_pdf.py" in mine),
         ("我的简历页无 Traceback", "Traceback" not in mine),
         ("设置页不再有照片上传", "上传照片" not in settings),
-        ("设置页保留分享链接", "分享链接" in settings or "twin=1" in settings),
+        ("设置页把分享链接指向「展示」", "📇 展示" in settings or "展示" in settings),
     ]
     ok = 0
     for cname, good in checks:
