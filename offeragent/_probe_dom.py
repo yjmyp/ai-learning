@@ -37,9 +37,10 @@ JS = """
 
 def main():
     nav = sys.argv[1] if len(sys.argv) > 1 else ""
+    path = sys.argv[2] if len(sys.argv) > 2 else ""
     if not bf.launch(headless=True):
         raise SystemExit("Edge 启动失败")
-    ws = bf._new_tab("http://localhost:8501")
+    ws = bf._new_tab("http://localhost:8501" + path)
     cdp = bf._CDP(ws)
     cdp.call("Page.enable")
     time.sleep(13)

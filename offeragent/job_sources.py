@@ -268,6 +268,9 @@ def search_boss(keyword: str, city: str = "南京", ask_model=None) -> list:
     if not ask_model:
         raise RuntimeError("这个源需要 ask_model 才能解析")
     import browser_fetch as bf
+    ok, why = bf.desktop_available()
+    if not ok:
+        raise RuntimeError(why)
     city_code = BOSS_CITY_CODES.get(city, "101190100")
     url = (f"https://www.zhipin.com/web/geek/job?query={quote(keyword)}"
            f"&city={city_code}")
@@ -297,6 +300,15 @@ def search(source: str, keyword: str, city: str = "", ask_model=None) -> list:
 ALL_SOURCES = "全部平台（合并去重）"
 
 
+def boss_available() -> tuple:
+    """BOSS 能不能用：返回 (bool, 原因)。云端/没浏览器时为 False。"""
+    try:
+        import browser_fetch as bf
+        return bf.desktop_available()
+    except Exception as e:
+        return False, f"浏览器抓取模块不可用：{str(e)[:120]}"
+
+
 def search_all(keyword: str, city: str = "南京", ask_model=None,
                sources: list = None) -> dict:
     """一次搜索，把多个平台的结果合并去重。
@@ -309,6 +321,16 @@ def search_all(keyword: str, city: str = "南京", ask_model=None,
     """
     targets = sources or ["牛客", "实习僧", "BOSS直聘"]
     merged, seen, by_source, errors = [], set(), {}, {}
+
+    # BOSS 需要本机浏览器；云端直接跳过，并把原因写清楚
+    try:
+        import browser_fetch as bf
+        _ok, _why = bf.desktop_available()
+    except Exception as e:
+        _ok, _why = False, str(e)[:120]
+    if not _ok and "BOSS直聘" in targets:
+        targets = [t for t in targets if t != "BOSS直聘"]
+        errors["BOSS直聘"] = _why
 
     for src in targets:
         try:

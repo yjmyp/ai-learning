@@ -1028,10 +1028,23 @@ def page_jobs():
         kw = c1.text_input("关键词", value="AI", key="src_kw",
                            placeholder="AI / Agent / 大模型 / RAG")
         city = c2.text_input("城市", value="南京", key="src_city")
-        src = c3.selectbox("来源", [job_sources.ALL_SOURCES] + job_sources.SOURCES,
-                           key="src_name")
-        st.caption("牛客最快最稳；实习僧是实验性；BOSS 需要先在调试窗口登录一次"
-                   "（终端跑 python -m browser_fetch --setup）。")
+        _boss_ok, _boss_why = job_sources.boss_available()
+        _src_opts = [job_sources.ALL_SOURCES] + [
+            s for s in job_sources.SOURCES if s != "BOSS直聘" or _boss_ok]
+        src = c3.selectbox("来源", _src_opts, key="src_name")
+        st.caption("牛客最快最稳；实习僧是实验性（偶尔拿不到详情）。")
+        if _boss_ok:
+            st.caption("BOSS 直聘走你**本机已登录的浏览器**：第一次要在终端跑一次 "
+                       "`python -m browser_fetch --setup`，在弹出的窗口里登录 BOSS。")
+            if st.button("🪟 帮我打开 BOSS 登录窗口（本机）", key="boss_setup"):
+                import browser_fetch as _bf
+                if _bf.launch(headless=False):
+                    st.success("已打开调试窗口：在里面登录 BOSS 直聘，登录后**别关这个窗口**，"
+                               "回来点「开始搜岗」即可。")
+                else:
+                    st.error("窗口启动失败：" + _bf.no_browser_message()[:200])
+        else:
+            st.warning("BOSS 直聘这次用不了，原因：" + str(_boss_why)[:300])
         if st.button("🔍 开始搜岗", type="primary", key="do_search"):
             with st.spinner(f"正在搜「{kw}」…（多平台要等十几秒）"):
                 try:

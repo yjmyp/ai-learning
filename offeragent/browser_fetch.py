@@ -15,6 +15,7 @@ browser_fetch · 用真实浏览器抓页面（Chrome DevTools Protocol）
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -23,21 +24,114 @@ from pathlib import Path
 import requests
 import websocket  # websocket-client
 
+try:
+    import winreg          # 只有 Windows 有；用来读 Edge 的安装路径
+except ImportError:        # pragma: no cover
+    winreg = None
+
 HERE = Path(__file__).parent
 PROFILE_DIR = HERE / "data" / "edge_profile"
 DEBUG_PORT = 9333
 
-EDGE_CANDIDATES = [
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-]
+# 允许用环境变量直接指定浏览器（装在不常见位置时的兜底）
+BROWSER_ENV = ("EDGE_PATH", "BROWSER_PATH", "CHROME_PATH")
+
+
+def edge_candidates() -> list:
+    """按可靠性排序列出可能的浏览器路径：环境变量 → 注册表 → 常见安装位置 → PATH。"""
+    out = []
+    for env in BROWSER_ENV:
+        v = os.environ.get(env)
+        if v:
+            out.append(v)
+    out += [
+        # Edge 正式版（三处常见位置）
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe",
+        # Edge 预览通道
+        r"C:\Program Files (x86)\Microsoft\Edge Beta\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge Dev\Application\msedge.exe",
+        # Chrome 兜底（同样是 Chromium，CDP 一样能用）
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
+        # macOS
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ]
+    for name in ("msedge", "msedge.exe", "google-chrome", "chromium",
+                 "chromium-browser", "chrome"):
+        p = shutil.which(name)
+        if p:
+            out.append(p)
+    return [os.path.expandvars(p) for p in out]
+
+
+def _registry_edge():
+    """从注册表读 Edge 安装路径——装在非默认盘时，这里通常也能找到。"""
+    if winreg is None:
+        return None
+    sub = (r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe",
+           r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe")
+    for key in sub:
+        for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                with winreg.OpenKey(hive, key) as k:
+                    val = winreg.QueryValue(k, None)
+                if val and Path(str(val)).exists():
+                    return str(val)
+            except OSError:
+                continue
+    return None
+
+
+def no_browser_message() -> str:
+    checked = "\n".join(f"  · {p}" for p in edge_candidates()[:10])
+    return ("没找到 Edge / Chrome。BOSS 直聘是强反爬站，只能借用你本机已经登录的浏览器，"
+            "所以这一步必须有一个桌面浏览器。\n已找过这些位置：\n"
+            + checked +
+            "\n办法：① 装一个 Edge（或 Chrome）后重试；"
+            "② 或者设环境变量 EDGE_PATH=浏览器 exe 的完整路径；"
+            "③ 只想搜岗位的话，把来源换成「牛客」或「实习僧」——它们不需要浏览器。")
 
 
 def edge_path() -> str:
-    for p in EDGE_CANDIDATES:
-        if Path(p).exists():
-            return p
-    raise RuntimeError("没找到 Edge，请确认安装路径")
+    """返回可用的 Chromium 系浏览器路径（Edge 优先，找不到退到 Chrome）。"""
+    for env in BROWSER_ENV:                  # 环境变量优先级最高
+        v = os.environ.get(env)
+        if v:
+            try:
+                if Path(v).exists():
+                    return v
+            except Exception:
+                continue
+    reg = _registry_edge()
+    if reg:
+        return reg
+    for p in edge_candidates():
+        try:
+            if p and Path(p).exists():
+                return p
+        except Exception:
+            continue
+    raise RuntimeError(no_browser_message())
+
+
+def desktop_available() -> tuple:
+    """返回 (能不能抓,BOSS 的理由)。
+
+    云端（Linux 容器）根本没有桌面浏览器，所以这里先给一个说人话的理由，
+    而不是让用户对着「没找到 Edge」发呆。
+    """
+    if sys.platform not in ("win32", "darwin"):
+        return False, ("BOSS 抓取只在你自己的电脑上可用（云端没有浏览器，"
+                       "抓不了需要登录态的 BOSS）。云端请用「牛客」或「实习僧」。")
+    try:
+        edge_path()
+        return True, ""
+    except RuntimeError as e:
+        return False, str(e)
 
 
 def is_running() -> bool:
