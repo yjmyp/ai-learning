@@ -2563,6 +2563,14 @@ def pipeline_bar():
                 "投递是唯一能把上面这些数字变成「有回应」的动作。")
 
 
+def _is_cloud() -> bool:
+    """粗判是否跑在 Streamlit Community Cloud（云端仓库挂在 /mount/src 下）。"""
+    try:
+        return str(BASE_DIR).replace("\\", "/").startswith("/mount/src")
+    except Exception:
+        return False
+
+
 def check_auth():
     """L1 密码门：配置了密码才启用；未配置 = 本地开发免登录。"""
     pw = ""
@@ -2580,6 +2588,11 @@ def check_auth():
         except Exception:
             pass
     if not pw and not pw_hash:
+        if _is_cloud():
+            st.error("⚠️ 这个应用跑在公网，但没有设置访问密码。任何拿到链接的人都能用你的 "
+                     "DeepSeek Key 花钱。请到 Manage app → Settings → Secrets 加一行：\n\n"
+                     "```toml\nAPP_PASSWORD = \"你自己的密码\"\n```\n\n"
+                     "保存后应用会自动重启，刷新本页就会出现密码框。")
         return
     if st.session_state.get("auth_ok"):
         return
