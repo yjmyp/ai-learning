@@ -43,7 +43,10 @@ def main():
         return r
 
     click_nav("我的资料")
-    mine = text_now()
+    mine_html = cdp.call("Runtime.evaluate", {
+        "expression": "document.documentElement.outerHTML",
+        "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
+    mine = html_to_text(mine_html)
     click_nav("设置")
     settings = text_now()
     cdp.close()
@@ -54,6 +57,10 @@ def main():
         ("我的简历页有模板选择", "简历模板" in mine),
         ("三个模板都出现",
          all(k in mine for k in ["经典单栏", "左侧栏", "极简黑白"])),
+        ("模板缩略预览真的渲染了",
+         all(f"oa-pv-{k}" in mine_html for k in ["classic", "sidebar", "compact"])),
+        ("预览样式被隔离（带作用域前缀）", "oa-pv-classic .page" in mine_html),
+        ("有放大整页预览", "放大看" in mine),
         ("有下载 HTML 按钮", "下载这份 HTML" in mine),
         ("提示了命令行出 PDF", "make_resume_pdf.py" in mine),
         ("我的简历页无 Traceback", "Traceback" not in mine),

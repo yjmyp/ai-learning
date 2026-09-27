@@ -10,6 +10,7 @@ resume_templates · 简历排版模板
 内容来自 DEFAULT_CONTENT（改这里就等于改简历正文），照片用 base64 直接嵌进去。
 """
 import base64
+import re
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -392,3 +393,44 @@ def render(tpl: str = "classic", content=None, photo_uri: str = "") -> str:
 def render_with_photo(tpl: str = "classic", content=None, photo_path=None) -> str:
     """自动找照片（或指定路径）后渲染。"""
     return render(tpl, content, photo_data_uri(photo_path))
+
+
+# ---------- 应用内预览：把整页模板缩放进 Streamlit ----------
+
+RE_MEDIA = re.compile(r"@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}")
+RE_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def _scope_css(css: str, scope: str) -> str:
+    """给每条选择器加作用域前缀，避免预览样式污染整个应用。
+
+    打印用的 @media 块直接丢掉——预览不需要，留着反而会干扰页面打印。
+    """
+    css = RE_MEDIA.sub("", css)
+    out = []
+    for sel, body in RE_RULE.findall(css):
+        parts = []
+        for s in sel.split(","):
+            s = s.strip()
+            if not s:
+                continue
+            parts.append(scope if s == "body" else f"{scope} {s}")
+        if parts:
+            out.append(", ".join(parts) + " {" + body.strip() + "}")
+    return "\n".join(out)
+
+
+def preview_html(tpl: str = "classic", content=None, photo_uri: str = "",
+                 zoom: float = 0.5, height: int = 620) -> str:
+    """生成"能直接塞进 st.html"的缩略预览：样式隔离、按比例缩小。"""
+    html = render(tpl, content, photo_uri)
+    css = (re.search(r"<style>(.*?)</style>", html, re.S) or [None, ""])[1]
+    body = (re.search(r"<body>(.*?)</body>", html, re.S) or [None, ""])[1]
+    scope = f".oa-pv-{tpl}"
+    scoped = _scope_css(css, scope)
+    extra = (f".oa-pv-wrap-{tpl} {{ width: 100%; height: {height}px; overflow: hidden;"
+             f" border: 1px solid #E3E7EE; border-radius: 10px; background: #fff; }}"
+             f"{scope} {{ zoom: {zoom}; width: 800px; transform-origin: top left; }}"
+             f"{scope} .page {{ margin: 0; box-shadow: none; }}")
+    return (f'<style>{scoped}\n{extra}</style>'
+            f'<div class="oa-pv-wrap-{tpl}"><div class="{scope}">{body}</div></div>')

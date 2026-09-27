@@ -1966,10 +1966,28 @@ def page_my_resume():
     st.caption("同一份内容，三种排版。选一个，先在浏览器里打开看一眼，"
                "满意了再用本地脚本出 PDF（照片会自动嵌进去）。")
     tpl_labels = list(resume_templates.TEMPLATES.values())
-    tpl_pick = st.segmented_control("模板", tpl_labels, default=tpl_labels[0],
-                                    label_visibility="collapsed", key="tpl_pick")
-    tpl_key = list(resume_templates.TEMPLATES.keys())[
-        tpl_labels.index(tpl_pick or tpl_labels[0])]
+    tpl_keys = list(resume_templates.TEMPLATES.keys())
+    _pv_photo = resume_templates.photo_data_uri()
+    st.caption("下面就是三套模板长什么样（缩略图，跟打印稿同一套排版）。"
+               "没照片时照片位是空的——所以想看清差别，先在上面传一张。")
+    _pv_cols = st.columns(3)
+    _tpl_note = {
+        "classic": "结果前置的单栏，从上往下扫最顺。默认选这个。",
+        "sidebar": "左边一栏放照片 + 联系方式 + 技能，右边只放经历。照片最显眼。",
+        "compact": "极简黑白、宋体、细线，不要颜色。投偏传统 / 国企类团队更稳。",
+    }
+    for _col, _k in zip(_pv_cols, tpl_keys):
+        with _col:
+            st.markdown(f"**{_k}**")
+            st.caption(_tpl_note[_k])
+            st.html(resume_templates.preview_html(_k, photo_uri=_pv_photo,
+                                                  zoom=0.42, height=470))
+    tpl_pick = st.segmented_control("选一个作为你的模板", tpl_labels,
+                                    default=tpl_labels[0], key="tpl_pick")
+    tpl_key = tpl_keys[tpl_labels.index(tpl_pick or tpl_labels[0])]
+    with st.expander(f"放大看「{tpl_key}」整页（跟我打印出来的一致）", expanded=False):
+        st.html(resume_templates.preview_html(tpl_key, photo_uri=_pv_photo,
+                                              zoom=0.86, height=980))
     _html = resume_templates.render_with_photo(tpl_key)
     t1, t2, t3 = st.columns([1, 1, 2])
     t1.download_button("⬇️ 下载这份 HTML", data=_html.encode("utf-8"),
@@ -1978,9 +1996,6 @@ def page_my_resume():
     t2.caption("下载后双击打开 → Ctrl+P → 另存为 PDF，就是当前模板的样子。")
     t3.caption("要高保真 PDF（照片自动嵌入、实测 1 页）就在终端跑："
                f"`python offeragent\\make_resume_pdf.py --template {tpl_key}`")
-    st.caption("模板说明：classic = 结果前置的单栏（推荐）；"
-               "sidebar = 左侧栏放照片/技能，信息密度高；compact = 极简黑白，"
-               "投偏传统团队更稳。换模板不会改内容，只改排版。")
 
 
 def page_resume_tailor():
