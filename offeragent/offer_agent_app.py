@@ -37,6 +37,7 @@ PROFILE_PATH = DATA_DIR / "profile.md"
 ME_PATH = BASE_DIR / "me.txt"
 CONFIG_PATH = DATA_DIR / "config.json"
 TALKQ_PATH = DATA_DIR / "talk_queue.json"
+USAGE_PATH = DATA_DIR / "usage.json"
 META_SUFFIX = ".meta.json"
 MY_RESUME_PATH = BASE_DIR.parent / "简历" / "我的简历.md"
 
@@ -504,10 +505,73 @@ def get_model() -> str:
 # ============================================================
 # AI 调用
 # ============================================================
+def daily_limit() -> int:
+    """每天允许的模型调用次数上限（防公开链接被人刷费用）。
+
+    优先级：Secrets 的 DAILY_CALL_LIMIT > 环境变量 > 本地 config.json > 默认 200。
+    """
+    raw = ""
+    try:
+        raw = st.secrets.get("DAILY_CALL_LIMIT", "")
+    except Exception:
+        raw = ""
+    if not raw:
+        raw = os.environ.get("DAILY_CALL_LIMIT", "")
+    if not raw:
+        try:
+            raw = json.loads(read_text(CONFIG_PATH, "{}")).get("daily_call_limit", "")
+        except Exception:
+            raw = ""
+    try:
+        n = int(raw)
+        return n if n > 0 else 0        # 0 = 不限（明确设 0 才关闭保护）
+    except Exception:
+        return 200
+
+
+def _usage_today() -> dict:
+    """今天的调用计数，按日期自动归零。"""
+    today = time.strftime("%Y-%m-%d")
+    try:
+        u = json.loads(read_text(USAGE_PATH, "{}"))
+    except Exception:
+        u = {}
+    if not isinstance(u, dict) or u.get("date") != today:
+        u = {"date": today, "calls": 0}
+    return u
+
+
+def _bump_usage() -> int:
+    u = _usage_today()
+    u["calls"] = int(u.get("calls", 0)) + 1
+    try:
+        USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        write_text(USAGE_PATH, json.dumps(u, ensure_ascii=False))
+    except Exception:
+        pass
+    return u["calls"]
+
+
+def usage_left() -> tuple:
+    """返回 (今天剩余次数, 上限)。上限为 0 表示不限。"""
+    lim = daily_limit()
+    used = int(_usage_today().get("calls", 0))
+    if lim <= 0:
+        return (-1, 0)
+    return (max(lim - used, 0), lim)
+
+
 def ask_model(messages: list, model: str = None) -> str:
     api_key = get_api_key()
     if not api_key:
         raise RuntimeError("未配置 API Key：请到「设置」页填入 DeepSeek API Key")
+    lim = daily_limit()
+    used = int(_usage_today().get("calls", 0))
+    if used >= lim:
+        raise RuntimeError(
+            f"今天的模型调用额度已用完（上限 {lim} 次）。这是防止公开链接被人刷费用的保护。"
+            f"要放宽就把 Secrets / 设置里的 DAILY_CALL_LIMIT 调大，或者明天再用。")
+    _bump_usage()
     model = model or get_model()
     resp = requests.post(
         API_URL,
@@ -1615,6 +1679,21 @@ def page_settings():
         write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
         st.success("设置已保存")
     st.markdown("---")
+    st.markdown("##### 💰 花费保护：每天最多调用几次模型")
+    st.caption("公开链接被人乱点、或你自己狂跑批量匹配，都是按调用次数烧钱的。"
+               "这里设一个每日上限，超过就拒绝调用并提示。填 0 = 不限制。")
+    _lim_now = daily_limit()
+    _left, _ = usage_left()
+    new_lim = st.number_input("每日调用上限（次）", min_value=0, max_value=100000,
+                              value=int(cfg.get("daily_call_limit", 200) or 200),
+                              step=50, key="lim_in")
+    st.caption(f"当前生效：{'不限' if _lim_now <= 0 else str(_lim_now) + ' 次'}　·　"
+               f"今天已用 {0 if _lim_now <= 0 else _lim_now - _left} 次")
+    if st.button("保存上限", key="lim_save"):
+        cfg["daily_call_limit"] = int(new_lim)
+        write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+        st.success("已保存。部署版也可以在 Secrets 里加 `DAILY_CALL_LIMIT = \"100\"` 覆盖。")
+    st.markdown("---")
     st.markdown("##### 连接测试")
     if st.button("🔌 测试 API 连接"):
         with st.spinner("测试中…"):
@@ -2571,6 +2650,9 @@ def main():
             f'<br>今天已投 <b>{apply_assist.applied_today()}</b></div>',
             unsafe_allow_html=True,
         )
+        _left, _lim = usage_left()
+        st.caption("今天模型调用：**不限**" if _lim <= 0
+                   else f"今天模型调用：**{_lim - _left} / {_lim}** 次")
         st.divider()
         st.caption("搜岗 → 匹配 → 话术 → 投递 → 复盘")
 
