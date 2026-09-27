@@ -13,15 +13,21 @@ resume_builder · 问答式生成简历
 import json
 from pathlib import Path
 
+from resume_clean import clean  # noqa: E402  简历文本清洗（去掉本地路径乱码）
+
 HERE = Path(__file__).parent
 DATA_DIR = HERE / "data"
 STATE_PATH = DATA_DIR / "resume_build.json"
+PHOTO_PATH = HERE.parent / "简历" / "照片.jpg"
 
 # (键, 问题, 为什么问 / 怎么答)
 QUESTIONS = [
     ("name", "你的姓名？", "简历抬头要用。"),
     ("school", "学校、专业、届别？", "例：南京邮电大学 / 网络工程 / 2027 届。"),
     ("contact", "手机号和邮箱？", "HR 联系你要用，写一个常用的。"),
+    ("photo", "有没有能用的一寸照 / 半身照？",
+     "很多简历要贴照片。这一步会直接出现上传按钮，传了我就存成「简历/照片.jpg」，"
+     "简历和公开名片都会自动用上；没有就点「跳过这题」，简历照样能用。"),
     ("available", "什么时候能到岗、一周几天、能实习多久？",
      "例：2026 年 9 月下旬到岗，一周 4-5 天，能实习 3-6 个月。实习岗特别看这个。"),
     ("skills", "你会哪些技术？按熟练程度说，会就是会，不会就是不会。",
@@ -68,9 +74,21 @@ def answer(state: dict, value: str):
     q = current(state)
     if not q:
         return
-    state["answers"][q["k"]] = (value or "").strip()
+    # 用户可能把本地文件拖进来，先把路径乱码清掉再存
+    state["answers"][q["k"]] = clean((value or "").strip())[0]
     state["idx"] = state.get("idx", 0) + 1
     save(state)
+
+
+def has_photo() -> bool:
+    return PHOTO_PATH.exists() and PHOTO_PATH.is_file()
+
+
+def save_photo(data: bytes) -> Path:
+    """把上传的照片存成 简历/照片.jpg（名片页和简历共用这一张）。"""
+    PHOTO_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PHOTO_PATH.write_bytes(data)
+    return PHOTO_PATH
 
 
 def reset():
@@ -89,6 +107,8 @@ BUILD_PROMPT = """把下面的问答内容整理成一份**中文技术实习简
 2. 项目描述按 STAR 思路压缩：做什么 → 用什么做的 → 结果（有数字就放数字，没数字就不编）。
 3. 不要写性格和软素质（"性格开朗""学习能力强"一律不写）。
 4. 结尾加一个「⚠️ 待补充」小节，列出哪些字段是空的、建议怎么补。
+5. **绝对不要写文件路径、盘符、`file://` 链接、`%E7%AE%80` 这类编码乱码**；
+   要放链接就放 https 开头的公开链接（GitHub / 部署地址）。
 
 结构：
 # 姓名 · 求职意向
@@ -106,4 +126,14 @@ BUILD_PROMPT = """把下面的问答内容整理成一份**中文技术实习简
 def build(state: dict, ask_model) -> str:
     body = "\n".join(f"问：{q}\n答：{state['answers'].get(k) or '（未答）'}"
                      for k, q, _ in QUESTIONS)
-    return (ask_model(BUILD_PROMPT + body) or "").strip()
+    raw = (ask_model(BUILD_PROMPT + body) or "").strip()
+    text, _ = clean(raw)          # 兜底：模型有时会把路径抄进正文
+    if has_photo():
+        note = "> 📷 照片已就绪（简历/照片.jpg）——打印版简历会自动带上这张照片。"
+    else:
+        note = "> 📷 照片未提供——需要的话到「我的简历」页上传一张即可。"
+    # 插在标题之后，方便看简历的人第一时间知道照片情况
+    lines = text.splitlines()
+    if lines and lines[0].startswith("#"):
+        return "\n".join([lines[0], "", note] + lines[1:])
+    return note + "\n\n" + text

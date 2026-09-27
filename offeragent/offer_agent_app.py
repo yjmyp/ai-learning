@@ -76,6 +76,7 @@ import company_lookup  # noqa: E402  公司速查
 import job_detail  # noqa: E402  岗位档案与筛选依据
 import doc_io  # noqa: E402  文档/图片读取（PDF / Word / 图片 OCR）
 import resume_builder  # noqa: E402  问答式生成简历
+import resume_clean  # noqa: E402  简历文本清洗（剔除本地路径 / 编码乱码）
 
 REPORTS_DIR = DATA_DIR / "reports"
 
@@ -401,17 +402,20 @@ def write_text(path: Path, text: str):
 def load_my_resume() -> str:
     """读「我的简历」：优先读 简历/我的简历.md，没有就退回仓库里已有的简历。"""
     if MY_RESUME_PATH.exists():
-        return read_text(MY_RESUME_PATH)
+        return resume_clean.clean(read_text(MY_RESUME_PATH))[0]
     for cand in [BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习.md",
                  BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习-v2.md"]:
         if cand.exists():
-            return read_text(cand)
+            return resume_clean.clean(read_text(cand))[0]
     return ""
 
 
-def save_my_resume(text: str):
+def save_my_resume(text: str) -> tuple:
+    """保存「我的简历」。顺手清掉本地路径乱码，返回 (干净文本, 清洗报告)。"""
+    cleaned, report = resume_clean.clean((text or "").strip())
     MY_RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_text(MY_RESUME_PATH, (text or "").strip() + "\n")
+    write_text(MY_RESUME_PATH, cleaned + "\n")
+    return cleaned, report
 
 
 NEXT_HINTS = {
@@ -1642,9 +1646,11 @@ def page_advice():
         return
     default_resume = read_text(BASE_DIR / ".." / "简历" / "余剑-简历-AI应用开发实习-v2.md") \
         if (BASE_DIR / ".." / "简历" / "余剑-简历-AI应用开发实习-v2.md").exists() else ""
+    default_resume = resume_clean.clean(default_resume)[0]
     resume = st.text_area("简历全文（默认读取 v2，可粘贴覆盖）", default_resume,
                           height=300, key="resume_area")
     if st.button("📝 生成简历建议", type="primary"):
+        resume = resume_clean.clean(resume)[0]
         with st.spinner("生成中…"):
             try:
                 st.session_state["advice_result"] = ask_chat(PROMPT_ADVICE, report, resume)
@@ -1869,18 +1875,38 @@ def resume_source_panel(prefix: str) -> str:
         if q:
             st.markdown(f"**{q['q']}**")
             st.caption("为什么问这个 / 怎么答有用：" + q["why"])
-            val = st.text_area("你的回答", rb["answers"].get(q["k"], ""),
-                               key=f"{prefix}_rb_{q['k']}", height=100)
-            c1, c2, c3 = st.columns(3)
-            if c1.button("提交，下一题", type="primary", key=f"{prefix}_rb_next"):
-                resume_builder.answer(rb, val)
-                st.rerun()
-            if c2.button("跳过这题", key=f"{prefix}_rb_skip"):
-                resume_builder.answer(rb, "")
-                st.rerun()
-            if c3.button("重新开始", key=f"{prefix}_rb_reset"):
-                resume_builder.reset()
-                st.rerun()
+            if q["k"] == "photo":
+                # 照片这一题直接给上传按钮，比让人打字有用
+                up_photo = st.file_uploader("上传照片（jpg / png / webp）",
+                                            type=["jpg", "jpeg", "png", "webp"],
+                                            key=f"{prefix}_rb_photo")
+                if up_photo is not None:
+                    st.image(up_photo.getvalue(), width=140, caption="预览")
+                    if st.button("✅ 用这张照片", type="primary",
+                                 key=f"{prefix}_rb_photo_save"):
+                        dst = resume_builder.save_photo(up_photo.getvalue())
+                        resume_builder.answer(rb, f"已上传：{dst.name}")
+                        st.rerun()
+                c1, c2 = st.columns(2)
+                if c1.button("没有照片，跳过这题", key=f"{prefix}_rb_skip"):
+                    resume_builder.answer(rb, "无")
+                    st.rerun()
+                if c2.button("重新开始", key=f"{prefix}_rb_reset"):
+                    resume_builder.reset()
+                    st.rerun()
+            else:
+                val = st.text_area("你的回答", rb["answers"].get(q["k"], ""),
+                                   key=f"{prefix}_rb_{q['k']}", height=100)
+                c1, c2, c3 = st.columns(3)
+                if c1.button("提交，下一题", type="primary", key=f"{prefix}_rb_next"):
+                    resume_builder.answer(rb, val)
+                    st.rerun()
+                if c2.button("跳过这题", key=f"{prefix}_rb_skip"):
+                    resume_builder.answer(rb, "")
+                    st.rerun()
+                if c3.button("重新开始", key=f"{prefix}_rb_reset"):
+                    resume_builder.reset()
+                    st.rerun()
         else:
             st.caption("答完了。生成草稿后，空着的字段会明确列出来，不会替你编。")
             if st.button("📝 生成简历草稿（调用 DeepSeek）", type="primary",
@@ -1911,10 +1937,21 @@ def page_my_resume():
     text = resume_source_panel("my")
     c1, c2 = st.columns([1, 3])
     if c1.button("💾 保存为我的简历", type="primary", key="my_save"):
-        save_my_resume(text)
-        st.success(f"已保存（{len(text)} 字）")
+        cleaned, rep = save_my_resume(text)
+        st.success(f"已保存（{len(cleaned)} 字）")
+        if rep:
+            st.warning("顺手清掉了这些不该出现在简历里的东西："
+                       + "、".join(f"{name}×{n}" for name, n, _ in rep))
+            with st.expander("看被删掉的原文片段"):
+                for name, n, sample in rep:
+                    st.caption(f"{name} ×{n}　例：{sample}")
+        else:
+            st.caption("文本检查通过：没有本地路径 / 编码乱码。")
         next_step("resume_saved")
     c2.caption("保存位置：简历/我的简历.md　·　投递里的「简历定制」默认读这份")
+    c2.caption("照片：" + ("✅ 已有（简历/照片.jpg），名片页和简历打印版都会用上"
+                          if find_avatar() else
+                          "❌ 还没有 —— 去「设置 → 🖼 名片照片」上传一张"))
 
 
 def page_resume_tailor():
@@ -1933,6 +1970,10 @@ def page_resume_tailor():
         if not resume.strip():
             st.warning("简历内容为空")
             return
+        resume, _rep = resume_clean.clean(resume)
+        if _rep:
+            st.caption("已自动清掉 " + "、".join(f"{n}×{c}" for n, c, _ in _rep)
+                       + "（本地路径/编码乱码，不属于简历内容）")
         with st.spinner("抽取 JD 关键词 + 本地比对 + 生成建议…"):
             try:
                 out = resume_tailor.tailor(resume, jd, lambda p: ask_chat(p))
@@ -2363,8 +2404,13 @@ def _twin_answer(profile: str, question: str) -> str:
 
 
 def _resume_pdf_path():
-    p = BASE_DIR.parent / "简历" / "余剑-应聘AI应用开发实习-本科.pdf"
-    return p if p.exists() else None
+    """名片页下载按钮用的 PDF：优先新的 v3，其次旧版。"""
+    for fn in ("余剑-简历-AI应用开发实习-v3.pdf",
+               "余剑-应聘AI应用开发实习-本科.pdf"):
+        p = BASE_DIR.parent / "简历" / fn
+        if p.exists():
+            return p
+    return None
 
 
 def page_twin_portal():
