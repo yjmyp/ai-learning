@@ -14,3 +14,5 @@ rag2/data/tmp/
 # OfferAgent 数据与备份（隐私/体积，不入库）
 offeragent/data/
 offeragent/backups/
+
+offeragent_data.json
