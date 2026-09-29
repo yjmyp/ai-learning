@@ -143,7 +143,11 @@ def _api_pull_data(pat: str) -> int:
     pack = json.loads(base64.b64decode(meta["content"]))
     restored = 0
     for rel, content in pack.get("files", {}).items():
-        target = HERE / rel
+        # rel 形如 offeragent/data/...（相对项目根），HERE 已是 offeragent/，去掉前缀防路径重复
+        relp = Path(rel)
+        if relp.parts and relp.parts[0] == "offeragent":
+            relp = Path(*relp.parts[1:])
+        target = HERE / relp
         target.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(content, str) and content.startswith("b64:"):
             target.write_bytes(base64.b64decode(content[4:]))
