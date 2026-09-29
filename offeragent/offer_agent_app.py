@@ -496,6 +496,20 @@ def page_data_log():
     else:
         st.caption("还没有 Agent 运行记录。去「找工作 → Agent 流程」跑一次，这里就会出现匹配分与运行轨迹。")
 
+    st.markdown("##### 🔍 分数对账（单一权威源：岗位库 meta vs 日志历史快照）")
+    _audit = audit_scores()
+    if _audit:
+        _at = [{"公司": r[0], "岗位库分(权威)": r[1], "日志最新分(快照)": r[2],
+                "状态": "✅" if r[3] else "⚠️", "说明": r[4]} for r in _audit]
+        st.dataframe(_at, use_container_width=True)
+        _bad = [r for r in _audit if not r[3]]
+        if _bad:
+            st.warning(f"{len(_bad)} 项不一致：日志有事件分但岗位库未回填（以岗位库为准，重跑「⚡ 批量打分」可修复）。")
+        else:
+            st.caption("全部一致：岗位库分数是唯一权威，日志只记事件（历史快照不覆盖岗位库）。")
+    else:
+        st.caption("岗位库为空，无需对账。")
+
     st.markdown("---")
     page_report()
 
