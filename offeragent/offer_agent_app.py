@@ -81,6 +81,26 @@ import resume_templates  # noqa: E402  简历排版模板（classic / sidebar / 
 
 REPORTS_DIR = DATA_DIR / "reports"
 
+# ============================================================
+# 分层重构（2026-09-29）：数据层 store / AI 层 llm / 渲染层 ui_kit
+# ============================================================
+from store import (ensure_dirs, read_text, write_text, load_my_resume, save_my_resume,
+                   load_meta, save_meta, list_jobs, save_new_job, detect_network_exclude,
+                   read_logs, audit_scores, check_apply_allowed, mark_applied)
+from llm import (get_api_key, get_model, daily_limit, usage_left, ask_model, ask_chat,
+                 extract_score, parse_report, extract_dim_scores)
+from ui_kit import (NEXT_HINTS, next_step, score_color, score_gauge, dim_radar, rank_bar,
+                    inject_css, hero, status_tag, render_section_cards, render_job_detail)
+
+# 云端持久化（Streamlit Cloud 无持久磁盘）：有 GITHUB_PAT 且岗位库为空 → 启动时自动拉取
+if os.environ.get("GITHUB_PAT") and not (DATA_DIR / "jds").exists():
+    try:
+        from sync_data import pull
+        pull()
+        st.caption("已从私有仓库恢复岗位数据")
+    except Exception as _e:
+        st.warning(f"数据同步跳过：{_e}")
+
 
 # ============================================================
 # 页面：今日行动（行动导向首屏）
@@ -478,515 +498,6 @@ def page_data_log():
 
     st.markdown("---")
     page_report()
-
-# ============================================================
-# 文件工具
-# ============================================================
-def ensure_dirs():
-    for d in (DATA_DIR, JDS_DIR, MATCH_DIR):
-        d.mkdir(parents=True, exist_ok=True)
-
-
-def read_text(path: Path, default: str = "") -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return default
-
-
-def write_text(path: Path, text: str):
-    path.write_text(text, encoding="utf-8")
-
-
-def load_my_resume() -> str:
-    """读「我的简历」：优先读 简历/我的简历.md，没有就退回仓库里已有的简历。"""
-    if MY_RESUME_PATH.exists():
-        return resume_clean.clean(read_text(MY_RESUME_PATH))[0]
-    for cand in [BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习.md",
-                 BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习-v2.md"]:
-        if cand.exists():
-            return resume_clean.clean(read_text(cand))[0]
-    return ""
-
-
-def save_my_resume(text: str) -> tuple:
-    """保存「我的简历」。顺手清掉本地路径乱码，返回 (干净文本, 清洗报告)。"""
-    cleaned, report = resume_clean.clean((text or "").strip())
-    MY_RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_text(MY_RESUME_PATH, cleaned + "\n")
-    return cleaned, report
-
-
-NEXT_HINTS = {
-    "saved_job": "下一步：去「匹配分析」跑一次匹配，看这个岗位值不值得投。",
-    "matched": "下一步：在同一个岗位卡片里点「ATS 检查」，看简历关键词覆盖够不够。",
-    "ats_done": "下一步：生成投递话术，复制后去招聘平台发送。",
-    "talk_done": "下一步：把话术发出去，然后回来点「标记已投」；7 天后没动静会自动进跟进提醒。",
-    "applied": "下一步：等消息。有回信就粘到「投递记录 → 邮件识别」里判断怎么改状态。",
-    "profile_done": "下一步：去「岗位」搜一次岗，勾选入库后跑匹配。",
-    "resume_saved": "下一步：去「投递 → 简历定制」，选一个目标岗位做 ATS 覆盖检查。",
-}
-
-
-def next_step(key: str, extra: str = "", defer: bool = False):
-    """每个动作完成后，明确告诉用户下一步做什么。
-
-    defer=True 用于「紧接着就 st.rerun()」的场景：提示先存起来，重跑完在页面底部显示，
-    否则提示会被 rerun 冲掉，用户看不到。
-    """
-    hint = NEXT_HINTS.get(key)
-    if not hint:
-        return
-    text = hint + (("　" + extra) if extra else "")
-    if defer:
-        st.session_state["_pending_hint"] = text
-    else:
-        st.info(text)
-
-
-def load_meta(name: str) -> dict:
-    p = JDS_DIR / (name + META_SUFFIX)
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-
-def save_meta(name: str, meta: dict):
-    (JDS_DIR / (name + META_SUFFIX)).write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def list_jobs() -> list:
-    """返回 [(name, meta, jd_text)]，按状态排序：待投 → 已投 → 排除"""
-    jobs = []
-    for p in sorted(JDS_DIR.glob("*.txt")):
-        name = p.stem
-        meta = load_meta(name)
-        meta.setdefault("name", name)
-        meta.setdefault("company", "")
-        meta.setdefault("city", "")
-        meta.setdefault("status", "待投")
-        meta.setdefault("match_score", None)
-        meta.setdefault("excluded_reason", "")
-        meta.setdefault("created_at", "")
-        meta.setdefault("source_url", "")
-        jobs.append((name, meta, read_text(p)))
-    order = {"待投": 0, "已投": 1, "排除": 2}
-    jobs.sort(key=lambda x: (order.get(x[1]["status"], 9), -(x[1]["match_score"] or 0)))
-    return jobs
-
-
-def get_api_key() -> str:
-    try:
-        k = st.secrets.get("DEEPSEEK_API_KEY", "")
-        if k:
-            return k
-    except Exception:
-        pass
-    k = os.environ.get("DEEPSEEK_API_KEY", "")
-    if k:
-        return k
-    cfg = read_text(CONFIG_PATH, "{}")
-    try:
-        return json.loads(cfg).get("api_key", "")
-    except Exception:
-        return ""
-
-
-def get_model() -> str:
-    cfg = read_text(CONFIG_PATH, "{}")
-    try:
-        return json.loads(cfg).get("model", DEFAULT_MODEL)
-    except Exception:
-        return DEFAULT_MODEL
-
-
-# ============================================================
-# AI 调用
-# ============================================================
-def daily_limit() -> int:
-    """每天允许的模型调用次数上限（防公开链接被人刷费用）。
-
-    优先级：Secrets 的 DAILY_CALL_LIMIT > 环境变量 > 本地 config.json > 默认 200。
-    """
-    raw = ""
-    try:
-        raw = st.secrets.get("DAILY_CALL_LIMIT", "")
-    except Exception:
-        raw = ""
-    if not raw:
-        raw = os.environ.get("DAILY_CALL_LIMIT", "")
-    if not raw:
-        try:
-            raw = json.loads(read_text(CONFIG_PATH, "{}")).get("daily_call_limit", "")
-        except Exception:
-            raw = ""
-    try:
-        n = int(raw)
-        return n if n > 0 else 0        # 0 = 不限（明确设 0 才关闭保护）
-    except Exception:
-        return 200
-
-
-def _usage_today() -> dict:
-    """今天的调用计数，按日期自动归零。"""
-    today = time.strftime("%Y-%m-%d")
-    try:
-        u = json.loads(read_text(USAGE_PATH, "{}"))
-    except Exception:
-        u = {}
-    if not isinstance(u, dict) or u.get("date") != today:
-        u = {"date": today, "calls": 0}
-    return u
-
-
-def _bump_usage() -> int:
-    u = _usage_today()
-    u["calls"] = int(u.get("calls", 0)) + 1
-    try:
-        USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        write_text(USAGE_PATH, json.dumps(u, ensure_ascii=False))
-    except Exception:
-        pass
-    return u["calls"]
-
-
-def usage_left() -> tuple:
-    """返回 (今天剩余次数, 上限)。上限为 0 表示不限。"""
-    lim = daily_limit()
-    used = int(_usage_today().get("calls", 0))
-    if lim <= 0:
-        return (-1, 0)
-    return (max(lim - used, 0), lim)
-
-
-def ask_model(messages: list, model: str = None) -> str:
-    api_key = get_api_key()
-    if not api_key:
-        raise RuntimeError("未配置 API Key：请到「设置」页填入 DeepSeek API Key")
-    lim = daily_limit()
-    used = int(_usage_today().get("calls", 0))
-    if used >= lim:
-        raise RuntimeError(
-            f"今天的模型调用额度已用完（上限 {lim} 次）。这是防止公开链接被人刷费用的保护。"
-            f"要放宽就把 Secrets / 设置里的 DAILY_CALL_LIMIT 调大，或者明天再用。")
-    _bump_usage()
-    model = model or get_model()
-    resp = requests.post(
-        API_URL,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={"model": model, "messages": messages},
-        timeout=120,
-    )
-    if resp.status_code != 200:
-        try:
-            err = resp.json().get("error", {}).get("message", resp.text[:200])
-        except Exception:
-            err = resp.text[:200]
-        raise RuntimeError(f"API 错误（{resp.status_code}）：{err}")
-    data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        raise RuntimeError(f"响应解析失败：{str(data)[:200]}")
-
-
-def ask_chat(prompt: str, *materials: str, model: str = None) -> str:
-    messages = [{"role": "user", "content": prompt}]
-    for m in materials:
-        if m and m.strip():
-            messages.append({"role": "user", "content": m})
-    return ask_model(messages, model)
-
-
-def extract_score(report: str) -> int:
-    m = re.search(r"匹配度[:：]?\s*(\d{1,3})\s*%", report)
-    if m:
-        return min(100, max(0, int(m.group(1))))
-    return None
-
-
-def parse_report(report: str) -> dict:
-    """把匹配报告解析成结构化小节：{'匹配点': [...], '差距': [...], ...}"""
-    sections = {}
-    current = None
-    for line in report.splitlines():
-        m = re.match(r"^#+\s*(匹配点|差距|短板与风险|短板|结论|同类岗位对比建议|维度评分)",
-                     line.strip())
-        if m:
-            current = m.group(1)
-            sections[current] = []
-            continue
-        if current and line.strip():
-            items = sections[current]
-            if line.strip().startswith(("-", "•", "*")):
-                items.append(line.strip().lstrip("-•* ").strip())
-            else:
-                if items:
-                    items[-1] = items[-1] + " " + line.strip()
-                else:
-                    items.append(line.strip())
-    return sections
-
-
-def render_section_cards(sections: dict):
-    """把解析后的报告渲染成彩色卡片组（比 markdown 好看）"""
-    style_map = {
-        "匹配点": ("✅ 匹配点", "#0F766E", "#D1FAE5"),
-        "差距": ("📌 差距", "#1D4ED8", "#DBEAFE"),
-        "短板与风险": ("⚠️ 短板与风险", "#B45309", "#FEF3C7"),
-        "结论": ("🎯 结论", "#1E293B", "#E2E8F0"),
-    }
-    for key in ("匹配点", "差距", "短板与风险", "结论"):
-        items = sections.get(key) or sections.get("短板") or []
-        if not items:
-            continue
-        label, color, bg = style_map.get(key, (key, "#334155", "#F1F5F9"))
-        lis = "".join(
-            f'<div style="padding:4px 0;font-size:14px;line-height:1.6">{"• " + it}</div>'
-            for it in items if it
-        )
-        st.markdown(
-            f'<div style="background:{bg};border:1px solid {color}33;'
-            f'border-radius:12px;padding:12px 16px;margin-bottom:10px">'
-            f'<div style="color:{color};font-weight:700;font-size:14px;margin-bottom:4px">{label}</div>'
-            f'{lis}</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def extract_dim_scores(report: str) -> dict:
-    """从「维度评分」小节提取五维分数 {维度: 分数}"""
-    m = re.search(r"##\s*维度评分\s*\n(.*)", report)
-    if not m:
-        return {}
-    line = m.group(1).strip().splitlines()[0] if m.group(1).strip() else ""
-    dims = {}
-    for part in line.replace("，", " ").replace(",", " ").split():
-        part = part.strip()
-        mm = re.match(r"([\u4e00-\u9fa5A-Za-z]+)\s*[:：]\s*(\d{1,3})", part)
-        if mm:
-            dims[mm.group(1)] = min(100, max(0, int(mm.group(2))))
-    return dims
-
-
-# ============================================================
-# 岗位管理 & 排除规则
-# ============================================================
-def detect_network_exclude(jd_text: str):
-    """检测 JD 是否「专门点名要求网络工程专业」。
-    返回 (原因, 命中原文)；没命中返回 (None, "")。"""
-    patterns = [
-        r"专业要求[^\n]*网络工程",
-        r"专业[：:][^\n]*网络工程",
-        r"网络工程[^\n]*等相关专业",
-        r"计算机、软件工程、网络工程",
-        r"（?网络工程）?[、，]?人工智能等相关专业",
-    ]
-    for pat in patterns:
-        m = re.search(pat, jd_text)
-        if m:
-            evidence = m.group(0).strip()
-            return ("JD 专业要求点名「网络工程」，非纯 AI 应用岗方向，自动排除",
-                    evidence[:80])
-    return None, ""
-
-
-def save_new_job(name: str, city: str, jd_text: str, source_url: str = "",
-                 extra: dict = None) -> str:
-    """新增/更新岗位；返回提示信息"""
-    name = re.sub(r"[\\/:*?\"<>|]", "_", name.strip())
-    if not name:
-        return "岗位名不能为空"
-    ensure_dirs()
-    write_text(JDS_DIR / f"{name}.txt", jd_text.strip())
-    meta = load_meta(name)
-    meta["name"] = name
-    meta["city"] = city.strip()
-    meta.setdefault("status", "待投")
-    meta.setdefault("match_score", None)
-    meta.setdefault("created_at", time.strftime("%Y-%m-%d"))
-    if source_url:
-        meta["source_url"] = source_url
-    if extra:
-        meta.update(extra)
-    reason, evidence = detect_network_exclude(jd_text)
-    if reason:
-        meta["status"] = "排除"
-        meta["excluded_reason"] = reason
-        meta["excluded_evidence"] = evidence
-    elif meta.get("excluded_reason") and meta["status"] == "排除":
-        meta["status"] = "待投"
-        meta["excluded_reason"] = ""
-        meta["excluded_evidence"] = ""
-    save_meta(name, meta)
-    return f"已保存：{name}（{'自动排除：' + reason if reason else '待投'}）"
-
-
-# ============================================================
-# 可视化
-# ============================================================
-def score_color(score):
-    if score >= 75:
-        return "#0F766E"
-    if score >= 60:
-        return "#2563EB"
-    if score >= 45:
-        return "#D97706"
-    return "#B91C1C"
-
-
-def score_gauge(score: int):
-    color = score_color(score)
-    fig = go.Figure(
-        go.Indicator(
-            mode="gauge+number",
-            value=score,
-            number={"suffix": "%", "font": {"size": 44, "color": color, "family": "Arial Black"}},
-            gauge={
-                "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#CBD5E1"},
-                "bar": {"color": color, "thickness": 0.28},
-                "bgcolor": "#F1F5F9",
-                "borderwidth": 0,
-                "steps": [
-                    {"range": [0, 45], "color": "#FEE2E2"},
-                    {"range": [45, 60], "color": "#FEF3C7"},
-                    {"range": [60, 75], "color": "#DBEAFE"},
-                    {"range": [75, 100], "color": "#D1FAE5"},
-                ],
-            },
-        )
-    )
-    fig.update_layout(height=240, margin=dict(l=20, r=20, t=10, b=10))
-    return fig
-
-
-def dim_radar(dims: dict):
-    names = list(dims.keys())
-    values = list(dims.values())
-    fig = go.Figure(
-        go.Scatterpolar(
-            r=values + values[:1],
-            theta=names + names[:1],
-            fill="toself",
-            line=dict(color="#2563EB", width=2),
-            fillcolor="rgba(37,99,235,0.25)",
-        )
-    )
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 100], tickfont=dict(size=10))),
-        height=280,
-        margin=dict(l=30, r=30, t=10, b=10),
-        showlegend=False,
-    )
-    return fig
-
-
-def rank_bar(jobs):
-    rows = [(m["name"], m["match_score"] or 0) for _, m, _ in jobs
-            if m["status"] != "排除" and m["match_score"] is not None]
-    if not rows:
-        return None
-    rows.sort(key=lambda x: x[1])
-    names = [r[0] for r in rows]
-    scores = [r[1] for r in rows]
-    colors = [score_color(s) for s in scores]
-    fig = go.Figure(go.Bar(
-        x=scores, y=names, orientation="h",
-        marker=dict(color=colors),
-        text=[f"{s}%" for s in scores], textposition="outside",
-    ))
-    fig.update_layout(
-        xaxis=dict(range=[0, 105], title="匹配度", tickfont=dict(size=11)),
-        yaxis=dict(tickfont=dict(size=12)),
-        height=max(220, len(names) * 42),
-        margin=dict(l=10, r=50, t=10, b=10),
-        bargap=0.35,
-    )
-    return fig
-
-
-# ============================================================
-# 全局样式（v2 · 视觉升级）
-# ============================================================
-def inject_css(variant: str = None):
-    """样式统一在 theme.py 维护。三套主题：A 默认 / B Linear / C Stripe。"""
-    st.markdown(theme.get_css(variant), unsafe_allow_html=True)
-
-
-def hero(title, subtitle, sub2=""):
-    """紧凑页头：标题 + 一行说明。不再用大块渐变，保持求职场合的克制。"""
-    sub = subtitle or ""
-    if sub2:
-        sub = f"{sub}　|　{sub2}" if sub else sub2
-    st.markdown(
-        f'<div class="oa-head"><div class="oa-head-title">{title}</div>'
-        f'<div class="oa-head-sub">{sub}</div></div>',
-        unsafe_allow_html=True,
-    )
-
-
-def status_tag(status: str):
-    m = {"待投": ("oa-tag-blue", "待投"), "已投": ("oa-tag-green", "已投"),
-         "排除": ("oa-tag-red", "排除")}
-    cls, label = m.get(status, ("oa-tag-amber", status))
-    return f'<span class="oa-tag {cls}">{label}</span>'
-
-
-def render_job_detail(name: str, meta: dict, jd: str):
-    """岗位档案：为什么在列表里 + 为什么保留/排除 + 这个岗位要什么人。"""
-    head = f"**{meta.get('company') or name}** · {meta.get('city') or '城市未填'}"
-    if meta.get("salary"):
-        head += f" · 薪资 {meta['salary']}"
-    st.markdown(head)
-
-    st.markdown("**① 它是怎么进到列表里的**")
-    for r in job_detail.entry_reasons(meta):
-        st.markdown(f"- {r['label']}：{r['detail']}")
-
-    st.markdown("**② 为什么保留 / 为什么排除**")
-    for r in job_detail.keep_or_drop(meta):
-        icon = "✅" if r.get("ok") else ("❔" if r.get("ok") is None else "⛔")
-        st.markdown(f"- {icon} {r['label']}：{r['detail']}")
-
-    parts = job_detail.split_jd(jd)
-    st.markdown("**③ 这个岗位要什么人**")
-    if parts["duty"]:
-        st.markdown("岗位职责：")
-        st.markdown(parts["duty"][:1200])
-    if parts["req"]:
-        st.markdown("任职要求：")
-        st.markdown(parts["req"][:1200])
-    if not parts["duty"] and not parts["req"]:
-        st.caption("这份 JD 没有明显的「职责 / 要求」分段，下面是原文：")
-        st.text((parts["other"] or jd)[:1200])
-    elif parts["other"].strip():
-        with st.expander("其他信息 / 原文剩余部分"):
-            st.text(parts["other"][:1200])
-
-    report = read_text(MATCH_DIR / f"match_{name}.md")
-    if report:
-        m = re.search(r"## 结论\s*\n+(.+)", report)
-        if m:
-            st.markdown("**④ 匹配结论**")
-            st.markdown(m.group(1).strip())
-
-    if not isinstance(meta.get("quality"), dict):
-        st.caption("这个岗位还没有质量检查结果（早期入库的岗位没有这项）")
-    if st.button("🔄 跑一次质量检查并保存", key=f"qc_{name}"):
-        meta["quality"] = job_quality.assess({
-            "jd": jd, "company": meta.get("company", ""),
-            "city": meta.get("city", ""), "salary": meta.get("salary", ""),
-            "url": meta.get("source_url", ""),
-        })
-        save_meta(name, meta)
-        st.success("质量检查已保存，刷新后能在上面看到逐项依据")
-        st.rerun()
-
 
 # ============================================================
 # 页面：仪表盘
@@ -2565,19 +2076,25 @@ def page_batch_apply(vkey: str = "boss"):
                 ok = apply_assist.copy_to_clipboard(talk)
                 st.toast("已复制到剪贴板" if ok else "复制失败", icon="✅" if ok else "⚠️")
             if cc[1].button("🌐 打开岗位", key=f"bo_{n}"):
-                ok = apply_assist.open_url(m.get("source_url", ""))
-                st.toast("已在浏览器打开" if ok else "该岗位没有链接", icon="✅" if ok else "⚠️")
+                _gate = check_apply_allowed(n, m)
+                if not _gate["allowed"]:
+                    st.warning(_gate["reason"])
+                else:
+                    ok = apply_assist.open_url(m.get("source_url", ""))
+                    st.toast("已在浏览器打开" if ok else "该岗位没有链接", icon="✅" if ok else "⚠️")
             if cc[2].button("✏️ 保存修改", key=f"bs_{n}"):
                 queue[n] = {"talk": talk, "hits": q.get("hits", [])}
                 write_text(TALKQ_PATH, json.dumps(queue, ensure_ascii=False, indent=2))
                 st.toast("已保存", icon="✅")
             if cc[3].button("✅ 发出去了，标记已投", type="primary", key=f"bm_{n}"):
-                m["status"] = "已投"
-                m["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                save_meta(n, m)
-                apply_assist.log_application(n, m, talk or q.get("talk", ""))
-                st.session_state["_pending_hint"] = f"已标记投递：{comp}"
-                st.rerun()
+                _gate = check_apply_allowed(n, m)
+                if not _gate["allowed"]:
+                    st.warning(_gate["reason"])
+                else:
+                    mark_applied(n, m)
+                    apply_assist.log_application(n, m, talk or q.get("talk", ""))
+                    st.session_state["_pending_hint"] = f"已标记投递：{comp}"
+                    st.rerun()
 
 
 

@@ -139,3 +139,27 @@ offeragent/
 ## 技术栈
 
 Python · Streamlit · DeepSeek API · requests · plotly · pypdf · python-docx · 纯本地数据（无外部数据库）
+
+## 分层架构（2026-09-29 重构）
+
+主入口 offer_agent_app.py 只保留页面编排；业务逻辑按层拆出，可独立测试：
+
+| 模块 | 职责 | 依赖 |
+|------|------|------|
+| store.py | 数据层：岗位库/简历读写、日志读取、分数对账（单一权威源）、投递防抖 | 纯 Python |
+| llm.py | AI 层：Key 解析、每日额度保护、调用、报告解析 | streamlit + requests |
+| ui_kit.py | 渲染层：页头/仪表盘/岗位档案/报告卡片/下一步提示 | streamlit + plotly |
+
+- 单一权威源：data/jds/*.meta.json 的 match_score/status 是唯一权威；agent_logs.jsonl 只记事件，历史分数是快照不覆盖岗位库。store.audit_scores() 一键对账，Web 端「数据与日志」页可看。
+- 投递防抖：已投岗位禁止重复投递；24 小时内投过也会被拦（store.check_apply_allowed）。
+
+## 数据持久化（Streamlit Cloud 重启不丢数据）
+
+Streamlit Cloud 无持久磁盘，每次重启回到仓库代码。根治方案（sync_data.py）：
+
+1. 建一个私有仓库（如 yjmyp/offeragent-data）
+2. GitHub → Settings → Developer settings → Personal access tokens 生成 token（勾 repo 权限）
+3. 本地：set GITHUB_PAT=ghp_xxx && python offeragent\sync_data.py push（把 data/ 打包进私有仓库，本地是权威）
+4. 云端：Settings → Secrets 填 GITHUB_PAT + DATA_REPO；app 启动检测到岗位库为空会自动 pull 恢复
+
+模板见 .streamlit/secrets.toml.example（含 DAILY_CALL_LIMIT 防刷额度保护）。

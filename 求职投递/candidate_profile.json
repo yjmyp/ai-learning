@@ -1,0 +1,72 @@
+{
+  "candidate": {
+    "legal_name": "余剑",
+    "preferred_name": "余剑",
+    "email": "yj2994762833@gmail.com",
+    "phone": "17578999648",
+    "current_location": "南京",
+    "linkedin_url": "",
+    "portfolio_url": "https://ai-learning-rkcci4rwsv6aewbthzbvvc.streamlit.app/",
+    "github_url": "https://github.com/yjmyp/ai-learning"
+  },
+  "current_status": {
+    "current_role_or_framing": "南京邮电大学网络工程专业 2027 届本科生（2023.09-2027.06），目标 AI 应用开发实习（南京优先，可远程）",
+    "employment_status_answer": "在校学生（本科大四在读）",
+    "available_start_date": "可协商，日常实习可尽快到岗",
+    "notice_period": "无（在校生，非在职）"
+  },
+  "work_authorization": {
+    "country": "中国",
+    "current_authorization": "中国公民，境内实习/校招无需工作许可",
+    "requires_sponsorship_now": false,
+    "requires_sponsorship_in_future": false,
+    "answer_exactly_as": "国内求职，不涉及签证或工作赞助",
+    "notes_for_unclear_forms": "若表单措辞与本档案不一致，先问用户再填。"
+  },
+  "targets": {
+    "primary_role_families": ["AI 应用开发（RAG / 大模型应用）", "Agent 开发"],
+    "secondary_role_families": ["懂技术的 AI 产品经理", "大模型评测 / 检索评估"],
+    "roles_to_avoid": ["纯算法 / 模型训练岗", "内容岗（AIGC 视频 / AI 分镜 / AI 小说编辑）", "与 AI 无关的 Java/Go 后端岗"],
+    "target_industries": ["AI 应用 / Agent 初创公司", "大厂 AI 应用岗（字节/腾讯等，9 月中后分波投）", "外企（Calix 等，免笔试优先）"],
+    "industries_to_avoid": [],
+    "target_company_stage": ["中小厂 / 创业公司（优先，反馈快）", "大厂（按分波时间线）"],
+    "target_locations": ["南京（优先）", "远程（全国）", "上海/北京/深圳（可接受，非优先）"],
+    "remote_hybrid_onsite_preference": "南京 onsite 优先，远程可接受",
+    "relocation_policy": "可接受远程；异地实习需可远程或企业提供住宿，否则优先南京"
+  },
+  "compensation": {
+    "base_salary_range": "待用户确认个人预期；市场参考区间 150-300/天（南京 AI 应用实习实证，Calix 200-280/天，萌想 4500-7500/月）",
+    "total_compensation_range": "",
+    "answer_strategy": "能 defer 就 defer；若必填，报参考区间并注明可谈",
+    "notes": "个人预期尚未由用户确认，投递前必须与用户核对一次。"
+  },
+  "resume_files": [
+    {
+      "role_family": "AI 应用开发 / Agent 实习",
+      "file_path": "C:/Users/29947/Documents/Codex/ai-learning/简历/余剑-应聘AI应用开发实习-本科.pdf",
+      "version": "v2-一页版-20260817",
+      "use_when": "投递 AI 应用 / RAG / Agent / 大模型相关实习；可编辑源为 简历/余剑-简历-AI应用开发实习.md"
+    }
+  ],
+  "voluntary_self_identification": {
+    "strategy": "prefer_not_to_say",
+    "fill_automatically": false,
+    "gender": "",
+    "race_ethnicity": "",
+    "veteran_status": "",
+    "disability_status": "",
+    "notes": "默认 Prefer not to say / 留空；除非用户明确要求存储具体答案。"
+  },
+  "never_guess": [
+    "legal name",
+    "work authorization",
+    "sponsorship",
+    "employment status",
+    "salary expectations",
+    "relocation",
+    "degree dates",
+    "employment dates",
+    "voluntary self-identification",
+    "background check or non-compete questions"
+  ]
+}
