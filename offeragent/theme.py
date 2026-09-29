@@ -743,8 +743,8 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"] { color: #8B949E !impo
 # 主题注册表：A 默认（深蓝·中庸）/ B Linear（深色紧凑）/ C Stripe（浅色宽松）/
 #           D 精修结合版 / E Night（GitHub 深色）
 THEMES = {
-    "E Night（深色·GitHub 风）": CSS_E,
     "D 精修（浅色·结合版）": CSS_D,
+    "E Night（深色·GitHub 风）": CSS_E,
     "A 默认（深蓝·中庸）": CSS,
     "B Linear（深色紧凑）": CSS_B,
     "C Stripe（浅色宽松）": CSS_C,

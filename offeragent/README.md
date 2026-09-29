@@ -11,6 +11,38 @@
 2. **生成归工具，发送归人**：程序不替你发送任何消息（平台风控 + 诚信红线），最后一眼和最后一下由你完成
 3. **有据可查**：每个界面都写清楚数据从哪来、算出来的分是什么意思
 
+## 🤖 Agent 化引擎（2026-09 新增）
+
+> 🎯 **批量打分排序**：`batch_score.py`（项目根）——分派「岗位分析师」子 Agent 对全部待投岗位评估质量 + 算匹配度，回填 `match_score/verdict` 到 meta.json，输出按匹配分从高到低的投递优先级（实测 9 岗：蔚蓝 86 > Calix 82 > 小米/南大/三和 78 > …）；Web 端「数据与日志」页也有「⚡ 批量打分」按钮。
+>
+> 📐 **架构图**：完整系统架构（画像地基 → 单 Agent 引擎 → 多 Agent 协作 → 落盘闭环）见 ![架构图](docs/architecture.png)（SVG 源文件：docs/architecture.svg）。
+
+把"人点按钮的应用"升级为**模型自主规划工具链的真 Agent**（`offer_agent_core.py` + `offer_agent_tools.py`）：
+
+```
+用户给一个目标 → 模型自主规划 → 依次调用工具 → 根据每个结果决定下一步 → 执行类动作停在人确认
+```
+
+- **工具注册表**：8 个工具统一 schema（assess_job / split_jd / match_job / generate_talk / check_talk / funnel / needs_followup / open_application🔒），全部复用本项目现有函数，不新造业务逻辑
+- **状态对象 + ReAct 循环**：messages + 记忆 + trace + 预算上限（防死循环）
+- **安全边界**：执行类动作（打开投递链接）标记 `human_confirm`，必须停在用户确认——"发送前那一下永远由人做"不变
+- **可观测**：每步工具调用写入 trace，可导出复盘
+- **实测**：`python agent_cli.py` 用真实岗位（Calix）跑通全链：质量评估 100 → JD 拆解 → 匹配 88% → 话术（禁用词 0）→ 校验 → 停在投递确认
+
+> 命令行演示（项目根目录）：`python agent_cli.py --job <岗位>`（默认 calix）/ `--confirm`（模拟确认）
+>
+> **Web 端已接入**：主应用侧边栏「找工作 → Agent 流程（引擎演示）」——选岗位 → 一键跑完整工具链 → 看 trace → 确认投递。
+>
+> **Agent 化增强（2026-09 第二批）**：
+> - **多岗位泛化**：已跑通 ant_agent（蚂蚁，match 78%）/ xiaomi_agent（小米，match 72%）/ calix（88%）；`--job <名>` 换岗即用
+> - **链接失效检测**：open_application 执行前自动核验 URL——404/410 或无法访问 → 不打开、提示"不要投空"（实测：calix 占位链接 404 被拦，蚂蚁真实链接 200 放行）
+> - **trace 落盘**：每次运行写入 `data/agent_logs.jsonl`（时间/岗位/公司/match_score/步数/是否确认/trace 全文），可复盘可统计
+> - **Web 商业化升级（2026-09-29）**：Agent 页加岗位信息卡 + 投递日志表 + 「一键批量跑全部待投岗位」；数据页加「Agent 运行洞察」（匹配分分布图 + 运行记录）；默认主题切换为 D 精修浅色版
+> - **引擎三升级（2026-09-29 第三批）**：
+>   - **匹配分门禁**：`GATE_SCORE=60`——match_job 返回 `verdict`（建议投 / 不建议投），日志带裁决列，低于 60 分自动提示别投空
+>   - **记忆落盘 SQLite**：`agent_memory.py` v2，`Memory(db_path=...)` 把事实/对话写入 `data/memory.db`，**跨会话记住用户**（无 db_path 保持纯内存，向后兼容）
+>   - **多 Agent 协作**：`offer_agent_multi.py`——主管（Supervisor，唯一工具 dispatch）+ 子 Agent（岗位分析师：assess/split/match；话术专家：generate/check；**投递复盘员：funnel/needs_followup**，独立状态与角色提示词）；CLI `--multi` 跑通（Calix 匹配 82、门禁建议投、话术截断自动重派自纠错、复盘员漏斗分析端到端通过）；Web 批量处理跟随运行模式（单/多 Agent）；投递动作（open_application）不在子 Agent 工具集，永远人确认
+
 ## 核心功能
 
 | 页面 | 功能 |

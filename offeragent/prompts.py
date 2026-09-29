@@ -161,7 +161,10 @@ TALK_VARIANTS = {
 # 拼装成最终提示词（把共用规则和示例填进去）
 def build_talk_prompt(variant: str) -> str:
     tpl = TALK_VARIANTS.get(variant, TALK_VARIANTS["boss"])[1]
-    return tpl.format(style=TALK_STYLE_RULES, fewshot=TALK_FEWSHOT)
+    base = tpl.format(style=TALK_STYLE_RULES, fewshot=TALK_FEWSHOT)
+    return base + ("\n\n特异性要求：话术必须自然提及 JD 里 1-2 个与你真实相关的具体技术/职责关键词"
+                   "（如 RAG、Agent、向量检索、网络协议、工具调用等），"
+                   "禁止只做自我介绍——HR 每天看几十条，只有提到 JD 关键词的才会被记住。")
 
 
 # ============================================================
