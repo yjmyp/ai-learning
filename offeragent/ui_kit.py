@@ -220,3 +220,24 @@ def next_step(key: str, extra: str = "", defer: bool = False):
         st.session_state["_pending_hint"] = text
     else:
         st.info(text)
+
+
+# ============================================================
+# 跨页导航（页面注册表 + 跳转）——拆分后移入公共层
+# ============================================================
+PAGES = {}
+
+
+def goto_page(key: str, **focus):
+    """跨页跳转：切到目标页，并把要预选的值先塞进 session_state。
+
+    用法：goto_page("match", match_pick="某岗位")
+    """
+    for k, v in focus.items():
+        st.session_state[k] = v
+    page = PAGES.get(key)
+    if page is None:
+        st.warning(f"找不到目标页面：{key}")
+        return
+    st.switch_page(page)
+
