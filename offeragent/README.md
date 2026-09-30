@@ -84,6 +84,22 @@ streamlit run offer_agent_app.py
 
 打开 `http://localhost:8501` → 先到「我的资料 → 自我蒸馏」生成画像，再去「岗位」加 JD 或从 URL 导入。
 
+## 测试（一键全跑）
+
+```bash
+python run_tests.py            # 项目根目录：离线测试全跑（15+ 通过 / 0 失败基线）
+python run_tests.py --live     # 连 live/网络/API 类一起跑（真实调 API，费额度）
+python run_tests.py --browser  # 连浏览器验收类一起跑（需先本地起 app）
+```
+
+覆盖：Agent 引擎回归（22 项）、全部页面 import 扫描（防云端 NameError）、密码门、链接检测、话术校验、简历 ATS、导航结构、云端启动模拟等 26 个测试文件。
+
+## 文档
+
+- `docs/interview_talk.md` —— 面试讲法：8 个可深挖技术点 + 通用应答套路 + 必背数字
+- `docs/weekly_ops.md` —— 每周 30 分钟运营流程（让项目喂真实数据）
+- `docs/architecture.png` / `.svg` —— 系统架构图
+
 ## 部署上线（Streamlit Community Cloud）
 
 1. 把 `offeragent` 目录推到 GitHub（`.gitignore` 已排除 `data/` 与 `.streamlit/secrets.toml`，隐私与密钥不泄露）
@@ -96,8 +112,10 @@ DEEPSEEK_API_KEY = "sk-你的key"
 APP_PASSWORD = "给工作台设的访问密码"
 ```
 
-4. Deploy → 2 分钟拿到公开链接
+4. Deploy → 2 分钟拿到公开链接（**在线地址：_你的 Streamlit Cloud 链接，填到这里_**）
 5. 数字名片页：公开链接后加 `/?twin=1`（免密码，供 HR 访问）
+
+> 依赖策略：`requirements.txt` 用 `>=` 下限（不锁死版本）——Streamlit Cloud 每次部署装最新已验证兼容版本，避免锁旧版踩依赖坑。
 
 > 部署版是空数据开始（本地 `data/` 不上传）：首屏先用 me.txt 蒸馏画像，再导入岗位。设计如此——你的求职数据留在本机。
 
