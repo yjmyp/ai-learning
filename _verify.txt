@@ -1,0 +1,5 @@
+run_tests.py: OK一致
+docs/interview_talk.md: OK一致
+docs/weekly_ops.md: OK一致
+offeragent/README.md: OK一致
+offeragent/test_undefined_names.py: OK一致

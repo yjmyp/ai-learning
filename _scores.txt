@@ -1,0 +1,13 @@
+  88  company#272203 待投     AI应用开发（可转正）-464641.meta.json
+  86  蔚蓝智能         待投     weilan_ai.meta.json
+  82  Calix 凯易讯    待投     calix.meta.json
+  78  南京大学环境规划设计研究院 待投     nanda_agent.meta.json
+  78  三和智为         待投     sanhe_agent.meta.json
+  78  小米           待投     xiaomi_agent.meta.json
+  72  company#147  待投     ai产品经理（实习）-458797.meta.json
+  72  蚂蚁国际         待投     ant_agent.meta.json
+  72  纷子适能         待投     fenzishineng_agent.meta.json
+  72  境瞳智能         待投     jingtong_agent.meta.json
+  62  company#304612 待投     AI产品经理（实习）-452439.meta.json
+  62  亚信科技         待投     asia_agent.meta.json
+  62  彩讯科技         排除     caixin_agent.meta.json
