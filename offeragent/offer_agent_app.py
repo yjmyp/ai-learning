@@ -116,23 +116,6 @@ if os.environ.get("GITHUB_PAT") and not (DATA_DIR / "jds").exists():
 # ============================================================
 # 页面：今日行动（行动导向首屏）
 # ============================================================
-PAGES = {}
-
-
-def goto_page(key: str, **focus):
-    """跨页跳转：切到目标页，并把要预选的值先塞进 session_state。
-
-    用法：goto_page("match", match_pick="某岗位")
-    """
-    for k, v in focus.items():
-        st.session_state[k] = v
-    page = PAGES.get(key)
-    if page is None:
-        st.warning(f"找不到目标页面：{key}")
-        return
-    st.switch_page(page)
-
-
 def page_today_hub():
     """今天：要做什么 + 做得怎么样。统计放进同一页的第二个页签，口径只有这一处。"""
     t1, t2 = st.tabs(["行动清单", "数据与日志"])
