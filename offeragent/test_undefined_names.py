@@ -117,10 +117,70 @@ def _walk(scope, outer: set, problems: list):
         _walk(child, avail, problems)
 
 
+def _collect_assigns(body, names, depth=0):
+    """收集容器内（try/if/with/for）的赋值名，不下钻函数体。"""
+    if depth > 2:
+        return
+    for node in body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+            continue
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+            continue
+        if isinstance(node, (ast.If, ast.Try, ast.With, ast.For, ast.While)):
+            _collect_assigns(node.body, names, depth + 1)
+            if isinstance(node, ast.Try):
+                for h in node.handlers:
+                    _collect_assigns(h.body, names, depth + 1)
+
+
+def _module_top_names(mod_name: str, here: Path, depth: int = 0) -> set:
+    """不执行模块，用 ast 收集它顶层定义/导入的名字（处理 import * 误报）。"""
+    if depth > 2:
+        return set()
+    mod_file = here / f"{mod_name}.py"
+    if not mod_file.exists():
+        return set()
+    try:
+        tree = ast.parse(mod_file.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                names.add((a.asname or a.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for a in node.names:
+                if a.name == "*":
+                    names |= _module_top_names(node.module, here, depth + 1)
+                else:
+                    names.add(a.asname or a.name)
+    _collect_assigns(tree.body, names)
+    return names
+
+
+def _star_import_extra(tree, here: Path) -> set:
+    """`from X import *` 的源模块顶层名字（静态收集，不执行模块）。"""
+    extra = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.ImportFrom) and node.module
+                and any(a.name == "*" for a in node.names)):
+            extra |= _module_top_names(node.module, here)
+    return extra
+
+
 def check_source(src: str):
     tree = ast.parse(src)
     problems = []
-    module_scope = _local_defs(tree.body)
+    module_scope = _local_defs(tree.body) | _star_import_extra(tree, HERE)
     for stmt in tree.body:
         if isinstance(stmt, SCOPE):
             _walk(stmt, module_scope, problems)
