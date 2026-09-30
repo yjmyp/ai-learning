@@ -10,7 +10,7 @@ import streamlit as st
 
 # 分层公共层 + 业务子模块（宽 import 兜底，页面函数保持原名调用）
 from store import *
-from prompts import TALK_VARIANTS
+from prompts import TALK_VARIANTS, generate_talk
 from llm import *
 from ui_kit import *
 import apply_assist
