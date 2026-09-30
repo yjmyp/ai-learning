@@ -13,6 +13,12 @@ from pathlib import Path
 
 import resume_clean
 
+try:
+    from jd_fetcher import fetch_jd
+    FETCHER_OK = True
+except Exception:
+    FETCHER_OK = False
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 JDS_DIR = DATA_DIR / "jds"

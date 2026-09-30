@@ -20,7 +20,10 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "offeragent"))
 
 import requests
-from local_key import API_KEY
+try:
+    from local_key import API_KEY
+except ImportError:
+    API_KEY = os.environ.get("DEEPSEEK_API_KEY", "") or ""
 from offer_agent_core import Tool, make_registry, gate_verdict
 
 import job_quality
