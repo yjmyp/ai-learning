@@ -13,5 +13,6 @@
 - 模型使用（2026-09-15 更新 · 用户指令，替代 09-01 版）：**一律使用 `deepseek-v4-flash`，禁止使用 `deepseek-v4-pro`**——包括派生子任务时的模型覆盖，以及任何形式的建议或推荐。只有用户主动明确要求时才允许用 pro。
 
 ## 项目说明
-- 这是学习 AI 应用开发的项目：`chat.py`（API 对话）、`rag/`（RAG 问答）、`agent_calc.py`（工具调用）、`rag_app.py`（Streamlit 网页版）。
-- 当前目标：2026 年 9-10 月投 AI 应用开发实习；近期任务是部署 `rag_app.py` 到 Streamlit Cloud。
+- 主项目 = **OfferAgent 求职智能体**（`offeragent/`）：自我蒸馏画像 → 岗位匹配打分 → 话术 → 半自动投递 → 面试拷问 → 复盘。技术栈 Python/Streamlit/SQLite/DeepSeek API/ReAct/多 Agent。结构、决策、红线、常用命令见 CONTEXT.md 第 15 条与 `docs/interview_talk.md`。
+- 历史学习项目：`chat.py`（API 对话）、`rag/`（RAG 问答）、`agent_calc.py`（工具调用）、`rag_app.py`（Streamlit 网页版，已部署）。
+- 当前目标：2026 年 9-10 月投 AI 应用开发实习；**立即执行真实投递（每天 3-5 家），不再加功能**。
