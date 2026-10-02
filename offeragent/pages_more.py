@@ -32,6 +32,19 @@ import resume_builder
 import resume_clean
 import resume_templates
 
+
+def _render_pdf_bytes(tpl: str) -> bytes | None:
+    """本地无头 Edge 渲染 PDF；云端等无 Edge 环境返回 None（按钮降级为提示）。"""
+    try:
+        import make_resume_pdf as mk
+        tmp = mk.RESUME_DIR / "_dl_tmp.pdf"
+        mk.html_to_pdf(resume_templates.render_with_photo(tpl), tmp)
+        data = tmp.read_bytes()
+        tmp.unlink(missing_ok=True)
+        return data
+    except Exception:
+        return None
+
 def page_advice():
     hero("简历建议", "匹配报告 + 简历 → 3 条可执行修改建议")
     jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
@@ -382,26 +395,44 @@ def page_my_resume():
         "sidebar": "左边一栏放照片 + 联系方式 + 技能，右边只放经历。照片最显眼。",
         "compact": "极简黑白、宋体、细线，不要颜色。投偏传统 / 国企类团队更稳。",
     }
+    _equal_h = st.toggle("三列统一高度（裁成一样高对比，底部渐隐；关掉=完整显示）",
+                         value=False,
+                         help="长模板（classic/compact）本来就比 sidebar 高，"
+                              "统一高度只是为了并排对比好看，不代表被裁坏了。")
     for _col, _k in zip(_pv_cols, tpl_keys):
         with _col:
             st.markdown(f"**{_k}**")
             st.caption(_tpl_note[_k])
             st.html(resume_templates.preview_html(_k, photo_uri=_pv_photo,
-                                                  zoom=0.42, height=470))
+                                                  zoom=0.42,
+                                                  clip_height=470 if _equal_h else 0,
+                                                  instance="grid"))
     tpl_pick = st.segmented_control("选一个作为你的模板", tpl_labels,
                                     default=tpl_labels[0], key="tpl_pick")
     tpl_key = tpl_keys[tpl_labels.index(tpl_pick or tpl_labels[0])]
     with st.expander(f"放大看「{tpl_key}」整页（跟我打印出来的一致）", expanded=False):
         st.html(resume_templates.preview_html(tpl_key, photo_uri=_pv_photo,
-                                              zoom=0.86, height=980))
+                                              zoom=0.78, instance="zoom"))
     _html = resume_templates.render_with_photo(tpl_key)
-    t1, t2, t3 = st.columns([1, 1, 2])
-    t1.download_button("⬇️ 下载这份 HTML", data=_html.encode("utf-8"),
+    _md = resume_templates.to_markdown()
+    _pdf_bytes = _render_pdf_bytes(tpl_key)
+    t1, t2, t3 = st.columns([1, 1, 1])
+    t1.download_button("⬇️ 下载 HTML", data=_html.encode("utf-8"),
                        file_name=f"余剑-简历-{tpl_key}.html", mime="text/html",
-                       key="tpl_dl")
-    t2.caption("下载后双击打开 → Ctrl+P → 另存为 PDF，就是当前模板的样子。")
-    t3.caption("要高保真 PDF（照片自动嵌入、实测 1 页）就在终端跑："
-               f"`python offeragent\\make_resume_pdf.py --template {tpl_key}`")
+                       key="tpl_dl_html")
+    if _pdf_bytes:
+        t2.download_button("⬇️ 下载 PDF（含照片）", data=_pdf_bytes,
+                           file_name=f"余剑-简历-{tpl_key}.pdf",
+                           mime="application/pdf", key="tpl_dl_pdf")
+    else:
+        t2.caption("PDF 需本地生成（云端无 Edge）\n"
+                   f"终端跑：`python offeragent\\make_resume_pdf.py "
+                   f"--template {tpl_key}`")
+    t3.download_button("⬇️ 下载 Markdown（可编辑）", data=_md.encode("utf-8"),
+                       file_name="余剑-简历.md", mime="text/markdown",
+                       key="tpl_dl_md")
+    st.caption("HTML = 双击 → Ctrl+P 也能存 PDF；PDF = 高保真、照片已嵌入、实测 1 页；"
+               "Markdown = 纯文本，可贴进 BOSS/邮件正文或继续改。")
 
 
 def page_resume_tailor(embedded: bool = False):
