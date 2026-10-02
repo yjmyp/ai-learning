@@ -2,10 +2,17 @@
 """扒一扒同类求职工具都有什么功能，给"还能加什么"做参考。"""
 import base64
 import re
+import sys
 import time
 import urllib.parse
 
 import requests
+
+# Windows 控制台默认 GBK，直接 print emoji 会 UnicodeEncodeError，强制 UTF-8
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 H = {"User-Agent": "codex"}
 

@@ -13,6 +13,12 @@ import os
 import sys
 import tempfile
 
+# Windows 控制台默认 GBK，直接 print ✓/emoji 会 UnicodeEncodeError，强制 UTF-8
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "offeragent"))

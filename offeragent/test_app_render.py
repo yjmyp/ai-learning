@@ -4,6 +4,12 @@ import re
 import sys
 from pathlib import Path
 
+# Windows 控制台默认 GBK，直接 print emoji/✓ 会 UnicodeEncodeError，强制 UTF-8
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 

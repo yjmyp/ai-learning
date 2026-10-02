@@ -382,18 +382,24 @@ def page_my_resume():
         "sidebar": "左边一栏放照片 + 联系方式 + 技能，右边只放经历。照片最显眼。",
         "compact": "极简黑白、宋体、细线，不要颜色。投偏传统 / 国企类团队更稳。",
     }
+    _equal_h = st.toggle("三列统一高度（裁成一样高对比，底部渐隐；关掉=完整显示）",
+                         value=False,
+                         help="长模板（classic/compact）本来就比 sidebar 高，"
+                              "统一高度只是为了并排对比好看，不代表被裁坏了。")
     for _col, _k in zip(_pv_cols, tpl_keys):
         with _col:
             st.markdown(f"**{_k}**")
             st.caption(_tpl_note[_k])
             st.html(resume_templates.preview_html(_k, photo_uri=_pv_photo,
-                                                  zoom=0.42, height=470))
+                                                  zoom=0.42,
+                                                  clip_height=470 if _equal_h else 0,
+                                                  instance="grid"))
     tpl_pick = st.segmented_control("选一个作为你的模板", tpl_labels,
                                     default=tpl_labels[0], key="tpl_pick")
     tpl_key = tpl_keys[tpl_labels.index(tpl_pick or tpl_labels[0])]
     with st.expander(f"放大看「{tpl_key}」整页（跟我打印出来的一致）", expanded=False):
         st.html(resume_templates.preview_html(tpl_key, photo_uri=_pv_photo,
-                                              zoom=0.86, height=980))
+                                              zoom=0.78, instance="zoom"))
     _html = resume_templates.render_with_photo(tpl_key)
     t1, t2, t3 = st.columns([1, 1, 2])
     t1.download_button("⬇️ 下载这份 HTML", data=_html.encode("utf-8"),
