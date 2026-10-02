@@ -382,39 +382,25 @@ def page_my_resume():
 
     st.markdown("---")
     st.markdown("#### 🎨 简历模板")
-    st.caption("同一份内容，三种排版。选一个，先在浏览器里打开看一眼，"
-               "满意了再用本地脚本出 PDF（照片会自动嵌进去）。")
+    st.caption("同一份内容，六套**不同布局的整体模板**（不是小改版，是结构不同的六种简历）。"
+               "先选一套，再往下逐套看全貌对比；下载按钮对应**选中的那套**（照片自动嵌入）。")
     tpl_labels = list(resume_templates.TEMPLATES.values())
     tpl_keys = list(resume_templates.TEMPLATES.keys())
     _pv_photo = resume_templates.photo_data_uri()
-    st.caption("下面就是三套模板长什么样（缩略图，跟打印稿同一套排版）。"
-               "没照片时照片位是空的——所以想看清差别，先在上面传一张。")
     st.caption(f"模板引擎版本 `{resume_templates.build_tag()}`"
                "（这个指纹和云端不一致 = 云端还在跑旧代码，去 Manage app → Reboot）")
-    _pv_cols = st.columns(3)
-    _tpl_note = {
-        "classic": "结果前置的单栏，从上往下扫最顺。默认选这个。",
-        "sidebar": "左边一栏放照片 + 联系方式 + 技能，右边只放经历。照片最显眼。",
-        "compact": "极简黑白、宋体、细线，不要颜色。投偏传统 / 国企类团队更稳。",
-    }
-    _equal_h = st.toggle("三列统一高度（裁成一样高对比，底部渐隐；关掉=完整显示）",
-                         value=False,
-                         help="长模板（classic/compact）本来就比 sidebar 高，"
-                              "统一高度只是为了并排对比好看，不代表被裁坏了。")
-    for _col, _k in zip(_pv_cols, tpl_keys):
-        with _col:
-            st.markdown(f"**{_k}**")
-            st.caption(_tpl_note[_k])
-            st.html(resume_templates.preview_html(_k, photo_uri=_pv_photo,
-                                                  zoom=0.42,
-                                                  clip_height=470 if _equal_h else 0,
-                                                  instance="grid"))
     tpl_pick = st.segmented_control("选一个作为你的模板", tpl_labels,
                                     default=tpl_labels[0], key="tpl_pick")
     tpl_key = tpl_keys[tpl_labels.index(tpl_pick or tpl_labels[0])]
     with st.expander(f"放大看「{tpl_key}」整页（跟我打印出来的一致）", expanded=False):
         st.html(resume_templates.preview_html(tpl_key, photo_uri=_pv_photo,
                                               zoom=0.78, instance="zoom"))
+    st.caption("下面是每套模板的完整预览（跟打印稿同一套排版，完整显示不裁切）：")
+    for _k in tpl_keys:
+        st.markdown(f"**{_k}**　—　{resume_templates.TEMPLATE_DESC.get(_k, '')}")
+        st.html(resume_templates.preview_html(_k, photo_uri=_pv_photo,
+                                              zoom=0.46, instance=f"full_{_k}"))
+    st.markdown("---")
     _html = resume_templates.render_with_photo(tpl_key)
     _md = resume_templates.to_markdown()
     _pdf_bytes = _render_pdf_bytes(tpl_key)
