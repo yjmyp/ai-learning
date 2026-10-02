@@ -148,10 +148,13 @@ def _meta_html(content) -> str:
 def _project_html(p, show_result=True) -> str:
     bullets = "".join(f"<li>{b}</li>" for b in p["bullets"])
     res = f'<div class="result">{p["result"]}</div>' if show_result else ""
+    # 技术栈拆成小标签，比一整行竖线好看，也更容易扫
+    chips = "".join(f'<span class="chip">{s.strip()}</span>'
+                    for s in re.split(r"[｜|·]", p["tech"]) if s.strip())
     return (f'<div class="proj"><div class="proj-head">'
             f'<span class="proj-title">{p["title"]}</span>'
             f'<span class="proj-date">{p["date"]}</span></div>'
-            f'{res}<div class="tech">{p["tech"]}</div>'
+            f'{res}<div class="tech">{chips}</div>'
             f"<ul>{bullets}</ul></div>")
 
 
@@ -169,34 +172,43 @@ FOOT = '<div class="foot">本简历由本人独立撰写，项目与数据均可
 
 CSS_CLASSIC = """
 * { box-sizing: border-box; }
-body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #1f2328;
-       margin: 0; background: #eceff3; font-size: 13px; line-height: 1.62; }
-.page { width: 800px; margin: 18px auto; background: #fff; padding: 40px 48px 34px;
+body { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+       color: #1F2328; margin: 0; background: #eceff3; font-size: 13px; line-height: 1.62; }
+.page { width: 800px; margin: 18px auto; background: #fff; padding: 42px 50px 34px;
         box-shadow: 0 2px 14px rgba(0,0,0,.12); }
-.head { display: flex; gap: 20px; align-items: flex-start; }
-.head-main { flex: 1; }
-.photo img { width: 104px; height: 140px; object-fit: cover;
-             border: 1px solid #d8dee7; border-radius: 4px; display: block; }
-h1 { font-size: 25px; margin: 0 0 4px; letter-spacing: .5px; }
-.role { font-size: 14px; color: #1d4ed8; font-weight: 700; margin-bottom: 6px; }
-.meta { font-size: 12.5px; color: #4b5563; line-height: 1.75; }
+.head { display: flex; gap: 22px; align-items: flex-start; }
+.head-main { flex: 1; min-width: 0; }
+.photo { flex: 0 0 auto; }
+.photo img { width: 104px; height: 140px; object-fit: cover; object-position: center top;
+             border: 1px solid #DCE3EC; border-radius: 6px; display: block;
+             box-shadow: 0 1px 3px rgba(16,24,40,.10); }
+h1 { font-size: 26px; margin: 0 0 7px; letter-spacing: 1px; color: #0F172A; }
+.role { display: inline-block; font-size: 12.6px; color: #1D4ED8; font-weight: 700;
+        background: #EEF2FF; border-radius: 999px; padding: 2px 11px; margin-bottom: 8px; }
+.meta { font-size: 12.5px; color: #4B5563; line-height: 1.8; }
 .meta b { color: #111827; }
-.links { font-size: 12.5px; color: #1d4ed8; margin-top: 3px; word-break: break-all; }
-h2 { font-size: 14.5px; color: #111827; margin: 20px 0 8px; padding-bottom: 4px;
-     border-bottom: 2px solid #1d4ed8; }
-.proj { margin-bottom: 15px; }
+.links { font-size: 12.5px; color: #1D4ED8; margin-top: 4px; word-break: break-all; }
+h2 { font-size: 14px; color: #0F172A; margin: 19px 0 8px; padding-bottom: 5px;
+     border-bottom: 1px solid #E5E9F2; letter-spacing: .6px; }
+h2::before { content: ''; display: inline-block; width: 4px; height: 13px;
+             background: #1D4ED8; border-radius: 2px; margin-right: 8px;
+             vertical-align: -1px; }
+.proj { margin-bottom: 14px; }
 .proj-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.proj-title { font-size: 14px; font-weight: 700; }
-.proj-date { font-size: 12px; color: #6b7280; white-space: nowrap; }
-.result { font-size: 12.8px; color: #0f5132; background: #eaf6ef; border-left: 3px solid #2f9e61;
-          padding: 5px 9px; margin: 5px 0; border-radius: 0 4px 4px 0; }
-.tech { font-size: 12.2px; color: #1d4ed8; margin: 3px 0 5px; }
-ul { margin: 3px 0 0; padding-left: 18px; }
+.proj-title { font-size: 14px; font-weight: 700; color: #0F172A; }
+.proj-date { font-size: 11.5px; color: #6B7280; white-space: nowrap; }
+.result { font-size: 12.6px; color: #0F5132; background: #F1F8F3; border-left: 3px solid #2F9E61;
+          padding: 5px 10px; margin: 5px 0 6px; border-radius: 0 5px 5px 0; }
+.tech { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; }
+.chip { font-size: 11px; color: #1D4ED8; background: #F2F5FE; border: 1px solid #E1E8FA;
+        border-radius: 5px; padding: 1px 7px; }
+ul { margin: 2px 0 0; padding-left: 17px; }
 li { margin: 3px 0; }
+li::marker { color: #9AA6B8; }
 .skills div { margin: 3px 0; }
-.skills b { display: inline-block; min-width: 84px; }
-.note { font-size: 12.2px; color: #4b5563; }
-.foot { font-size: 11px; color: #9ca3af; margin-top: 16px; border-top: 1px solid #eef1f5;
+.skills b { display: inline-block; min-width: 88px; color: #0F172A; }
+.note { font-size: 12.2px; color: #4B5563; }
+.foot { font-size: 10.5px; color: #9CA3AF; margin-top: 16px; border-top: 1px solid #EEF1F5;
         padding-top: 8px; }
 @media print {
   body { background: #fff; font-size: 10.9px; line-height: 1.42; }
@@ -216,93 +228,122 @@ li { margin: 3px 0; }
 
 CSS_SIDEBAR = """
 * { box-sizing: border-box; }
-body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #1f2328;
+body { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+       color: #1F2328;
        margin: 0; background: #eceff3; font-size: 12.6px; line-height: 1.6; }
 .page { width: 800px; margin: 18px auto; background: #fff; display: flex;
         box-shadow: 0 2px 14px rgba(0,0,0,.12); min-height: 1060px; }
-.side { width: 232px; background: #f3f5fa; padding: 30px 18px; border-right: 1px solid #e3e7f0; }
-.main { flex: 1; padding: 30px 30px 26px; }
-.photo img { width: 120px; height: 158px; object-fit: cover; margin: 0 auto 14px;
-             display: block; border: 1px solid #d8dee7; border-radius: 4px; background: #fff; }
-.side h3 { font-size: 12.5px; color: #1d4ed8; margin: 16px 0 6px; letter-spacing: .4px; }
-.side .meta { font-size: 11.6px; color: #3f4756; line-height: 1.7; word-break: break-all; }
+.side { width: 236px; background: #F6F8FC; padding: 32px 20px;
+        border-right: 1px solid #E6EBF3; }
+.main { flex: 1; padding: 32px 30px 26px; min-width: 0; }
+.photo img { width: 120px; height: 158px; object-fit: cover; object-position: center top;
+             margin: 0 auto 16px; display: block; background: #fff;
+             border: 3px solid #fff; border-radius: 8px;
+             box-shadow: 0 2px 8px rgba(16,24,40,.14); }
+.side h3 { font-size: 11.5px; color: #1D4ED8; margin: 18px 0 8px; letter-spacing: 1.2px; }
+.side h3::after { content: ''; display: block; height: 1px; background: #DCE4F0;
+                  margin-top: 6px; }
+.side .meta { font-size: 11.6px; color: #3F4756; line-height: 1.78; word-break: break-all; }
 .side .meta b { color: #111827; }
-.side .skill b { display: block; color: #111827; margin-top: 5px; }
-.side .skill div { margin-bottom: 6px; }
+.side .skill b { display: block; color: #0F172A; margin-top: 6px; font-weight: 650; }
+.side .skill div { margin-bottom: 7px; }
 .side ul { padding-left: 15px; margin: 3px 0; }
-.side li { margin: 3px 0; font-size: 11.6px; color: #3f4756; }
-h1 { font-size: 23px; margin: 0 0 3px; }
-.role { font-size: 13.4px; color: #1d4ed8; font-weight: 700; margin-bottom: 5px; }
-.links { font-size: 11.6px; color: #1d4ed8; word-break: break-all; margin-bottom: 4px; }
-h2 { font-size: 13.6px; color: #111827; margin: 16px 0 7px; padding-bottom: 3px;
-     border-bottom: 2px solid #1d4ed8; }
-.proj { margin-bottom: 13px; }
+.side li { margin: 3px 0; font-size: 11.6px; color: #3F4756; }
+h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: .8px; color: #0F172A; }
+.role { font-size: 13px; color: #1D4ED8; font-weight: 700; margin-bottom: 6px; }
+.links { font-size: 11.6px; color: #1D4ED8; word-break: break-all; margin-bottom: 4px; }
+h2 { font-size: 13.4px; color: #0F172A; margin: 17px 0 7px; padding-bottom: 4px;
+     border-bottom: 1px solid #E5E9F2; letter-spacing: .5px; }
+h2::before { content: ''; display: inline-block; width: 4px; height: 12px;
+             background: #1D4ED8; border-radius: 2px; margin-right: 7px;
+             vertical-align: -1px; }
+.proj { margin-bottom: 12px; }
 .proj-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.proj-title { font-size: 13.4px; font-weight: 700; }
-.proj-date { font-size: 11.4px; color: #6b7280; white-space: nowrap; }
-.result { font-size: 11.8px; color: #0f5132; background: #eaf6ef; border-left: 3px solid #2f9e61;
-          padding: 4px 8px; margin: 4px 0; border-radius: 0 4px 4px 0; }
-.tech { font-size: 11.4px; color: #1d4ed8; margin: 2px 0 4px; }
-ul { margin: 3px 0 0; padding-left: 17px; }
+.proj-title { font-size: 13.2px; font-weight: 700; color: #0F172A; }
+.proj-date { font-size: 11.2px; color: #6B7280; white-space: nowrap; }
+.result { font-size: 11.6px; color: #0F5132; background: #F1F8F3; border-left: 3px solid #2F9E61;
+          padding: 4px 9px; margin: 4px 0 5px; border-radius: 0 5px 5px 0; }
+.tech { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 5px; }
+.chip { font-size: 10.6px; color: #1D4ED8; background: #F2F5FE; border: 1px solid #E1E8FA;
+        border-radius: 5px; padding: 1px 6px; }
+ul { margin: 2px 0 0; padding-left: 16px; }
 li { margin: 2px 0; }
-.foot { font-size: 10.4px; color: #9ca3af; margin-top: 14px; border-top: 1px solid #eef1f5;
+li::marker { color: #9AA6B8; }
+.foot { font-size: 10.4px; color: #9CA3AF; margin-top: 14px; border-top: 1px solid #EEF1F5;
         padding-top: 6px; }
 @media print {
-  body { background: #fff; font-size: 10.6px; line-height: 1.42; }
+  body { background: #fff; font-size: 10.2px; line-height: 1.36; }
   .page { width: auto; margin: 0; box-shadow: none; min-height: 0; }
-  .side { width: 178px; padding: 0 12px 0 0; background: #fff; border-right: 1px solid #e3e7f0; }
-  .main { padding: 0 0 0 14px; }
-  h1 { font-size: 19px; } .role { font-size: 11.6px; }
-  h2 { font-size: 12px; margin: 8px 0 4px; }
-  .side h3 { font-size: 11px; margin: 10px 0 4px; }
-  .proj { margin-bottom: 6px; }
-  .proj-title { font-size: 11.8px; }
-  .result { font-size: 10.4px; padding: 2px 6px; margin: 2px 0 3px; }
-  .tech { font-size: 10.2px; }
+  .side { width: 168px; padding: 0 10px 0 0; background: #fff;
+          border-right: 1px solid #e3e7f0; }
+  .main { padding: 0 0 0 12px; }
+  h1 { font-size: 18px; margin-bottom: 2px; } .role { font-size: 11px; margin-bottom: 4px; }
+  h2 { font-size: 11.6px; margin: 7px 0 3px; padding-bottom: 2px; }
+  h2::before { height: 10px; margin-right: 5px; }
+  .side h3 { font-size: 10.4px; margin: 9px 0 3px; }
+  .side h3::after { margin-top: 3px; }
+  .side .meta { font-size: 9.8px; line-height: 1.55; }
+  .side li { font-size: 9.8px; margin: 1px 0; }
+  .side .skill b { margin-top: 3px; }
+  .side .skill div { margin-bottom: 4px; }
+  .proj { margin-bottom: 5px; }
+  .proj-title { font-size: 11.4px; }
+  .result { font-size: 10px; padding: 2px 6px; margin: 2px 0 3px; }
+  .tech { gap: 3px; margin-bottom: 3px; }
+  .chip { font-size: 9.6px; padding: 0 5px; }
   ul { padding-left: 13px; } li { margin: 1px 0; }
-  .photo img { width: 84px; height: 110px; margin-bottom: 8px; }
+  .photo img { width: 76px; height: 100px; margin-bottom: 7px; border-width: 2px; }
+  .foot { margin-top: 6px; padding-top: 4px; }
 }
 """
 
 CSS_COMPACT = """
 * { box-sizing: border-box; }
-body { font-family: "SimSun", "Songti SC", "Microsoft YaHei", serif; color: #000;
+body { font-family: "SimSun", "Songti SC", "Noto Serif SC", serif; color: #000;
        margin: 0; background: #eee; font-size: 13px; line-height: 1.6; }
 .page { width: 800px; margin: 18px auto; background: #fff; padding: 42px 50px 34px;
         box-shadow: 0 2px 12px rgba(0,0,0,.12); }
 .head { display: flex; gap: 20px; align-items: flex-start; }
-.head-main { flex: 1; }
-.photo img { width: 96px; height: 128px; object-fit: cover; border: 1px solid #999;
-             display: block; }
-h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: 2px; }
-.role { font-size: 13.6px; margin-bottom: 6px; }
-.meta { font-size: 12.4px; line-height: 1.7; }
+.head-main { flex: 1; min-width: 0; }
+.photo { flex: 0 0 auto; }
+.photo img { width: 96px; height: 128px; object-fit: cover; object-position: center top;
+             border: 1px solid #333; display: block; }
+h1 { font-size: 25px; margin: 0 0 5px; letter-spacing: 3px; }
+.role { font-size: 13.4px; margin-bottom: 7px; }
+.meta { font-size: 12.4px; line-height: 1.72; }
 .links { font-size: 12.2px; margin-top: 3px; word-break: break-all; }
-h2 { font-size: 14px; margin: 18px 0 7px; padding-bottom: 3px; border-bottom: 1px solid #000; }
-.proj { margin-bottom: 13px; }
+h2 { font-size: 13.8px; margin: 17px 0 7px; padding-bottom: 4px;
+     border-bottom: 1px solid #000; letter-spacing: 1px; }
+.proj { margin-bottom: 12px; }
 .proj-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
 .proj-title { font-size: 13.6px; font-weight: 700; }
 .proj-date { font-size: 12px; white-space: nowrap; }
 .result { font-size: 12.4px; margin: 4px 0; }
-.tech { font-size: 12px; margin: 2px 0 4px; }
-ul { margin: 3px 0 0; padding-left: 18px; }
+.result::before { content: '▸ '; font-weight: 700; }
+.tech { font-size: 11.8px; margin: 2px 0 5px; color: #333; }
+.tech .chip { background: none; border: 0; padding: 0; color: #333; font-size: 11.8px; }
+.tech .chip + .chip::before { content: ' · '; color: #999; }
+ul { margin: 3px 0 0; padding-left: 17px; }
 li { margin: 3px 0; }
 .skills div { margin: 3px 0; }
 .skills b { display: inline-block; min-width: 88px; }
 .foot { font-size: 11px; color: #666; margin-top: 14px; border-top: 1px solid #ddd;
         padding-top: 7px; }
 @media print {
-  body { background: #fff; font-size: 11.2px; line-height: 1.45; }
+  body { background: #fff; font-size: 10.8px; line-height: 1.4; }
   .page { width: auto; margin: 0; box-shadow: none; padding: 0 10mm; }
-  h1 { font-size: 20px; } .role { font-size: 12px; }
-  .meta { font-size: 11px; line-height: 1.55; }
-  h2 { font-size: 12.6px; margin: 9px 0 5px; }
-  .proj { margin-bottom: 7px; }
-  .proj-title { font-size: 12.4px; }
-  .result { font-size: 11px; margin: 2px 0 3px; }
-  .tech { font-size: 10.8px; }
-  ul { padding-left: 15px; } li { margin: 1px 0; }
-  .photo img { width: 84px; height: 112px; }
+  h1 { font-size: 19px; margin-bottom: 3px; letter-spacing: 2px; }
+  .role { font-size: 11.6px; margin-bottom: 4px; }
+  .meta { font-size: 10.6px; line-height: 1.5; }
+  .links { font-size: 10.6px; margin-top: 2px; }
+  h2 { font-size: 12.2px; margin: 8px 0 4px; padding-bottom: 3px; }
+  .proj { margin-bottom: 6px; }
+  .proj-title { font-size: 11.8px; }
+  .result { font-size: 10.4px; margin: 2px 0 3px; }
+  .tech { font-size: 10.2px; margin-bottom: 3px; }
+  ul { padding-left: 14px; } li { margin: 1px 0; }
+  .photo img { width: 76px; height: 101px; }
+  .foot { margin-top: 6px; padding-top: 4px; }
 }
 """
 
@@ -414,6 +455,36 @@ def render_with_photo(tpl: str = "classic", content=None, photo_path=None) -> st
     return render(tpl, content, photo_data_uri(photo_path))
 
 
+def to_markdown(content=None) -> str:
+    """把同一份 DEFAULT_CONTENT 转成 Markdown 文本（可编辑、可投递、可转其他格式）。"""
+    c = content or DEFAULT_CONTENT
+    lines = [f"# {c['name']} · {c['role']}", ""]
+    lines += [m.replace("<b>", "**").replace("</b>", "**").replace("<br>", "；")
+              for m in c["meta"]]
+    if c.get("links"):
+        lines.append("；".join(f"{label}：{url}" for label, url in c["links"]))
+    lines += ["", "## 项目经历", ""]
+    for p in c["projects"]:
+        lines.append(f"### {p['title']}　{p.get('date', '')}")
+        lines.append("")
+        lines.append(p["result"].replace("<b>", "**").replace("</b>", "**"))
+        lines.append("")
+        lines.append(f"技术栈：{p['tech']}")
+        for b in p["bullets"]:
+            lines.append("- " + b.replace("<b>", "**").replace("</b>", "**"))
+        lines.append("")
+    lines.append("## 教育背景")
+    lines.append(c["education"].replace("<b>", "**").replace("</b>", "**")
+                 .replace("<br>", "；"))
+    lines += ["", "## 技能", ""]
+    for k, v in c["skills"]:
+        lines.append(f"- **{k}**：{v}")
+    lines += ["", "## 求职说明", ""]
+    lines += [f"- {n}" for n in c["notes"]]
+    lines += ["", "> 本简历由本人独立撰写，项目与数据均可验证。"]
+    return "\n".join(lines)
+
+
 # ---------- 应用内预览：把整页模板缩放进 Streamlit ----------
 
 RE_MEDIA = re.compile(r"@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}")
@@ -440,22 +511,48 @@ def _scope_css(css: str, scope: str) -> str:
 
 
 def preview_html(tpl: str = "classic", content=None, photo_uri: str = "",
-                 zoom: float = 0.5, height: int = 620) -> str:
-    """生成"能直接塞进 st.html"的缩略预览：样式隔离、按比例缩小。
+                 zoom: float = 0.42, clip_height: int = 0,
+                 instance: str = "") -> str:
+    """把整页简历缩成可以塞进 st.html 的预览块（样式隔离）。
 
-    zoom 用标准 transform: scale 实现（CSS zoom 在 iframe 沙盒里不生效，
-    会导致整页按 800px 原宽渲染被裁成"左上角一块"）。
+    这里踩过两个坑，写下来免得再犯：
+
+    1. **缩放必须用 CSS `zoom`，不能用 `transform: scale`。**
+       transform 不改变元素在文档流里的占位高度：内容真实排版高 2400+px，
+       容器会照着 2400px 撑开，而视觉内容只剩 1000px —— 于是缩略图下面留一大片空白，
+       三列高度还各不相同。`zoom` 会影响布局尺寸，容器自动跟着缩放后的内容走。
+
+    2. **作用域 class 不能带点。**
+       `_scope_css()` 要的是选择器前缀 `.oa-pv-classic`，但 DOM 上的 class 属性必须写
+       `oa-pv-classic`。之前同一个带点字符串既当选择器又当 class 用，结果**所有预览样式
+       全部匹配不上**：照片按原图 600×800 撑开、`.page` 的内边距全丢，
+       这才是"排版乱 + 图片不对"的真正原因。
+
+    3. **同一个模板在同一页出现两次时，class 必须带实例后缀。**
+       `.oa-pv-classic { zoom: 0.42 }` 和 `.oa-pv-classic { zoom: 0.78 }` 是同一条规则，
+       后定义的那条会同时盖住两个元素 —— 结果三列缩略里的 classic 按 0.78 渲染、
+       宽度 624px 溢出到 336px 的列里被切掉，看起来就是"classic 被裁了"。
+       所以每处调用传自己的 instance（页面里用 instance="grid" / "zoom"）。
+
+    clip_height > 0 时按给定高度裁切并加底部渐隐（"统一高度对比"用），默认 0 = 完整显示。
     """
     html = render(tpl, content, photo_uri)
     css = (re.search(r"<style>(.*?)</style>", html, re.S) or [None, ""])[1]
     body = (re.search(r"<body>(.*?)</body>", html, re.S) or [None, ""])[1]
-    scope = f".oa-pv-{tpl}"
-    scoped = _scope_css(css, scope)
-    w = 800 * zoom
-    extra = (f".oa-pv-wrap-{tpl} {{ width: {w:.0f}px; min-height: {height}px; overflow: hidden;"
-             f" border: 1px solid #E3E7EE; border-radius: 10px; background: #fff; }}"
-             f".oa-pv-scale-{tpl} {{ width: 800px; transform: scale({zoom}); "
-             f"transform-origin: top left; }}"
-             f"{scope} .page {{ margin: 0; box-shadow: none; }}")
-    return (f'<style>{scoped}\n{extra}</style>'
-            f'<div class="oa-pv-wrap-{tpl}"><div class="oa-pv-scale-{tpl}">{body}</div></div>')
+    suffix = f"-{instance}" if instance else ""
+    cls = f"oa-pv-{tpl}{suffix}"
+    wrap = f"oa-pv-wrap-{tpl}{suffix}"
+    scoped = _scope_css(css, f".{cls}")
+    w = round(800 * zoom)
+    extra = (f".{wrap} {{ width: {w}px; overflow: hidden; background: #fff;"
+             f" border: 1px solid #E3E7EE; border-radius: 10px;"
+             f" box-shadow: 0 1px 3px rgba(16,24,40,.04); }}"
+             f".{cls} {{ zoom: {zoom}; width: 800px; }}"
+             f".{cls} .page {{ margin: 0; box-shadow: none; }}")
+    if clip_height and clip_height > 0:
+        extra += (f".{wrap} {{ height: {clip_height}px; position: relative; }}"
+                  f".{wrap}::after {{ content: ''; position: absolute; left: 0; right: 0;"
+                  f" bottom: 0; height: 54px; pointer-events: none;"
+                  f" background: linear-gradient(rgba(255,255,255,0), #fff); }}")
+    return (f"<style>{scoped}\n{extra}</style>"
+            f'<div class="{wrap}"><div class="{cls}">{body}</div></div>')
