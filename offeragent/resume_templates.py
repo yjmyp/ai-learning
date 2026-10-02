@@ -10,8 +10,21 @@ resume_templates · 简历排版模板
 内容来自 DEFAULT_CONTENT（改这里就等于改简历正文），照片用 base64 直接嵌进去。
 """
 import base64
+import hashlib
 import re
 from pathlib import Path
+
+
+def build_tag() -> str:
+    """本文件内容的短指纹。
+
+    用途：本地和 Streamlit Cloud 各显示一次，**数字不一样就说明云端还在跑旧代码**
+    （Streamlit Cloud 有时要手动 Reboot 才会加载新提交），比肉眼比对排版靠谱。
+    """
+    try:
+        return hashlib.md5(Path(__file__).read_bytes()).hexdigest()[:8]
+    except Exception:
+        return "unknown"
 
 HERE = Path(__file__).parent
 REPO = HERE.parent
@@ -453,6 +466,36 @@ def render(tpl: str = "classic", content=None, photo_uri: str = "") -> str:
 def render_with_photo(tpl: str = "classic", content=None, photo_path=None) -> str:
     """自动找照片（或指定路径）后渲染。"""
     return render(tpl, content, photo_data_uri(photo_path))
+
+
+def to_markdown(content=None) -> str:
+    """把同一份 DEFAULT_CONTENT 转成 Markdown 文本（可编辑、可投递、可转其他格式）。"""
+    c = content or DEFAULT_CONTENT
+    lines = [f"# {c['name']} · {c['role']}", ""]
+    lines += [m.replace("<b>", "**").replace("</b>", "**").replace("<br>", "；")
+              for m in c["meta"]]
+    if c.get("links"):
+        lines.append("；".join(f"{label}：{url}" for label, url in c["links"]))
+    lines += ["", "## 项目经历", ""]
+    for p in c["projects"]:
+        lines.append(f"### {p['title']}　{p.get('date', '')}")
+        lines.append("")
+        lines.append(p["result"].replace("<b>", "**").replace("</b>", "**"))
+        lines.append("")
+        lines.append(f"技术栈：{p['tech']}")
+        for b in p["bullets"]:
+            lines.append("- " + b.replace("<b>", "**").replace("</b>", "**"))
+        lines.append("")
+    lines.append("## 教育背景")
+    lines.append(c["education"].replace("<b>", "**").replace("</b>", "**")
+                 .replace("<br>", "；"))
+    lines += ["", "## 技能", ""]
+    for k, v in c["skills"]:
+        lines.append(f"- **{k}**：{v}")
+    lines += ["", "## 求职说明", ""]
+    lines += [f"- {n}" for n in c["notes"]]
+    lines += ["", "> 本简历由本人独立撰写，项目与数据均可验证。"]
+    return "\n".join(lines)
 
 
 # ---------- 应用内预览：把整页模板缩放进 Streamlit ----------

@@ -37,6 +37,8 @@
    - **顺带**：缩放从 `transform: scale` 改成 CSS `zoom`（transform 不改变文档流占位高度，容器会按未缩放高度撑开 → 缩略图下面一大片空白）；`clip_height` 参数替代写死的 min-height；加"三列统一高度对比"开关（裁切+底部渐隐，默认关=完整显示）。
    - **美化**：按 ATS 简历通行规范（单栏/左对齐/靠字重与细线分层/量化结果前置）重做三套模板——职位胶囊、章节标题左侧蓝条、技术栈拆成 chip 标签、结果条圆角、照片 3:4 圆角+白边阴影、技能标签加宽对齐；宋体版（compact）保持黑白无装饰。三套打印态**实测各 1 页**（sidebar/compact 一开始变 2 页，收紧了打印字号与侧栏宽度后回到 1 页）。
    - **验收**：新增 `offeragent/test_resume_preview.py`（量 DOM：容器高 vs 内容视觉高、页脚是否可见、照片渲染尺寸与 3:4 比例）→ 四块预览全部"容器=内容、页脚可见"，照片 44×59 / 50×66 / 40×54 / 81×109 全部正确；`run_tests.py` 统一入口从"12 通过/3 失败"修到 **15 通过 / 0 失败 / 12 跳过**（那 3 个失败其实是测试脚本把 emoji 打到 GBK 控制台崩了，已统一加 `sys.stdout.reconfigure(utf-8)`）。
+   - **云端没生效的排查结论**：逐行比对后发现**云端仓库其实已经有这次修复**（远端 `preview_html` 与本地逐字节一致），本地磁盘文件也与远端一致 → 问题不在代码，在"云端没跑到新代码"。为此加了**版本指纹**：`resume_templates.build_tag()`（本文件 md5 前 8 位），「我的简历 → 简历模板」页会显示 `模板引擎版本 xxxxxxxx`，**本地和云端数字不一致 = 云端还在跑旧代码，去 Manage app → Reboot**（当前本地指纹 `1a7bf2b5`）。
+   - **补上云端推送通道脚本** `tools/push_to_github.py`：从 Windows 凭据管理器读 token（`git credential fill`，不落盘不打印），走 api.github.com 按文件 PUT/DELETE 并**逐字节校验**；支持 `--dry-run`、`--files a,b`（本地 refs 落后时直接推指定文件）。用的是 `python tools/push_to_github.py --files "offeragent/resume_templates.py,offeragent/pages_more.py"`，实测 2/2 成功、字节一致。
 
 ## 接下来计划（2026-08-15 起，v4）
 
