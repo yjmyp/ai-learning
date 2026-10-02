@@ -10,6 +10,7 @@ resume_builder · 问答式生成简历
   3. 答完可以生成草稿；草稿会明确标注"哪些内容是空的需要你补"，不会自己编
   4. 状态存 data/resume_build.json，随时中断续答
 """
+import io
 import json
 from pathlib import Path
 
@@ -85,9 +86,28 @@ def has_photo() -> bool:
 
 
 def save_photo(data: bytes) -> Path:
-    """把上传的照片存成 简历/照片.jpg（名片页和简历共用这一张）。"""
+    """上传的照片统一处理成标准证件照（3:4 竖版、居中偏上裁剪、缩到 600×800），
+    名片页和简历共用这一张；处理失败（坏图/无 PIL）则原样保存，不阻塞上传。"""
     PHOTO_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PHOTO_PATH.write_bytes(data)
+    try:
+        from PIL import Image, ImageOps
+        im = Image.open(io.BytesIO(data))
+        im = ImageOps.exif_transpose(im)  # 修正手机照片旋转
+        im = im.convert("RGB")
+        w, h = im.size
+        target = 3 / 4  # 证件照宽高比（宽:高）
+        if w / h > target:  # 太宽 → 裁左右，保住中间的竖条
+            nw = int(h * target)
+            x0 = max(0, (w - nw) // 2)
+            im = im.crop((x0, 0, x0 + nw, h))
+        else:  # 太高 → 裁上下，焦点偏上 35%（大头照脸偏上，保住脸）
+            nh = int(w / target)
+            y_top = max(0, int((h - nh) * 0.35))
+            im = im.crop((0, y_top, w, y_top + nh))
+        im = im.resize((600, 800), Image.LANCZOS)
+        im.save(PHOTO_PATH, "JPEG", quality=92)
+    except Exception:
+        PHOTO_PATH.write_bytes(data)  # 处理失败就存原图
     return PHOTO_PATH
 
 
