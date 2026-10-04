@@ -88,6 +88,7 @@ from pages_home import *
 from pages_work import *
 from pages_match import *
 from pages_more import *
+from pages_resume import *
 from pages_agent import *
 from pages_apply import *
 from pages_twin import *
