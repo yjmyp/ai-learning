@@ -52,6 +52,67 @@ PACKS = {
             "offeragent/llm.py",
         ],
     },
+    "jobs": {
+        "title": "求职链路核心（搜岗 → 打分 → 门禁 → 投递）",
+        "desc": ("内容包括：搜岗多源入库、找工作/投递页面、话术生成（禁用词防 AI 腔）、"
+                 "岗位质量分、岗位详情、公司查询、ATS 关键词覆盖、面试拷问、流程条。"
+                 "目标是让 AI 讲透「搜岗→匹配→投递」数据链路。"),
+        "files": [
+            "offeragent/job_sources.py",
+            "offeragent/pages_work.py",
+            "offeragent/pages_apply.py",
+            "offeragent/apply_assist.py",
+            "offeragent/interview_drill.py",
+            "offeragent/job_quality.py",
+            "offeragent/job_detail.py",
+            "offeragent/company_lookup.py",
+            "offeragent/pipeline.py",
+            "offeragent/resume_tailor.py",
+            "offeragent/browser_fetch.py",
+            "offeragent/jd_fetcher.py",
+        ],
+    },
+    "content": {
+        "title": "内容生成与数字分身（蒸馏 / 简历生成 / 持久化）",
+        "desc": ("内容包括：自我蒸馏（画像生成/聊天）、数字分身（HR 问答）、简历问答生成与清洗、"
+                 "PDF 生成、OCR/文件读取、邮件解析、GitHub 数据同步。"
+                 "目标是让 AI 讲透「把用户变成结构化画像 → 复用到投递/分身」这条线。"),
+        "files": [
+            "offeragent/distill.py",
+            "offeragent/distill_chat.py",
+            "offeragent/self_distill.py",
+            "offeragent/digital_twin.py",
+            "offeragent/resume_builder.py",
+            "offeragent/resume_clean.py",
+            "offeragent/make_resume_pdf.py",
+            "offeragent/doc_io.py",
+            "offeragent/inbox_parse.py",
+            "offeragent/sync_data.py",
+        ],
+    },
+    "pages": {
+        "title": "页面域（首页 / 更多 / 分身 / Agent / 对比）",
+        "desc": ("内容包括：今日台/蒸馏聊天首页、更多页（建议/设置/对比/公司/拷问/投递记录）、"
+                 "数字分身页、Agent 控制台、对比页。"
+                 "目标是让 AI 看懂 11 页面的 UI 编排方式。"),
+        "files": [
+            "offeragent/pages_home.py",
+            "offeragent/pages_more.py",
+            "offeragent/pages_twin.py",
+            "offeragent/pages_agent.py",
+            "offeragent/pages_match.py",
+        ],
+    },
+    "theme": {
+        "title": "主题与 UI 工具（视觉层）",
+        "desc": ("内容包括：主题 CSS（theme.py，纯样式）、UI 公共组件（ui_kit.py）、"
+                 "v41 模块。目标是让 AI 在需要改视觉时能看懂主题结构。"),
+        "files": [
+            "offeragent/theme.py",
+            "offeragent/ui_kit.py",
+            "offeragent/v41.py",
+        ],
+    },
 }
 
 
