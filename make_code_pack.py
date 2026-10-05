@@ -20,8 +20,14 @@ from pathlib import Path
 ROOT = Path(r"C:\Users\29947\Documents\Codex\ai-learning")
 OUT_DIR = ROOT / "offeragent" / "docs" / "code_packs"
 
-# 硬排除：密钥、临时文件、数据
-EXCLUDE = {"local_key.py", ".streamlit", "secrets.toml", "data", "jds", "assets"}
+# 硬排除：密钥、浏览器配置、二进制库、图片与临时验证物（永不打包）
+EXCLUDE = {"local_key.py", ".streamlit", "secrets.toml", "edge_profile",
+           "memory.db", "memory_worker.db", "shots", "ocr_test.png",
+           "_pv_verify.html", "_pv_issue_summary.md", "config.json"}
+
+# 按扩展名选代码块语言
+LANG = {".py": "python", ".json": "json", ".jsonl": "json", ".md": "markdown",
+        ".txt": "text", ".toml": "toml", ".yaml": "yaml", ".yml": "yaml"}
 
 PACKS = {
     "resume": {
@@ -113,7 +119,57 @@ PACKS = {
             "offeragent/v41.py",
         ],
     },
+    "tests": {
+        "title": "测试与项目说明（26 个测试 + run_tests + README）",
+        "desc": ("内容包括：26 个测试脚本、统一测试入口 run_tests.py、README。"
+                 "目标是让 AI 看懂「测试怎么组织、怎么跑、断言什么」。"),
+        "files": [
+            "offeragent/test_*.py",
+            "run_tests.py",
+            "offeragent/README.md",
+        ],
+    },
+    "data_jobs": {
+        "title": "真实岗位数据（岗位库 + 匹配报告 + 话术 + 投递清单）",
+        "desc": ("内容包括：data/jds/ 真实 JD 与 meta 打分、data/match_results/ 匹配分析报告、"
+                 "话术队列、投递清单。目标是让 AI 看到「批量打分的输入输出长什么样」。"
+                 "注意：含你的求职信息，喂给 DeepSeek 前请知悉。"),
+        "files": [
+            "offeragent/data/jds/*.txt",
+            "offeragent/data/jds/*.meta.json",
+            "offeragent/data/match_results/*.md",
+            "offeragent/data/talk_queue.json",
+            "offeragent/data/投递清单-2026-10-04.md",
+        ],
+    },
+    "data_logs": {
+        "title": "Agent 运行日志与蒸馏产物",
+        "desc": ("内容包括：Agent trace 日志（agent_logs.jsonl）、蒸馏测试产物、"
+                 "个人画像、蒸馏聊天记录。目标是让 AI 看懂「引擎 trace 与自我蒸馏的产物」。"
+                 "注意：含个人信息，喂给 DeepSeek 前请知悉。"),
+        "files": [
+            "offeragent/data/agent_logs.jsonl",
+            "offeragent/data/distill_test/*",
+            "offeragent/data/profile.md",
+            "offeragent/data/distill_chat.json",
+        ],
+    },
 }
+
+
+def resolve_files(patterns):
+    """展开文件清单：支持 glob 通配（如 offeragent/test_*.py）。"""
+    out = []
+    for pat in patterns:
+        # 无通配 → 单文件
+        if "*" not in pat and "?" not in pat:
+            if (ROOT / pat).is_file():
+                out.append(pat)
+            continue
+        for p in sorted(ROOT.glob(pat)):
+            if p.is_file():
+                out.append(str(p.relative_to(ROOT)).replace("\\", "/"))
+    return out
 
 
 def read_safe(rel: str):
@@ -144,8 +200,9 @@ def build_pack(name: str, cfg: dict) -> str:
         "| 文件 | 行数 | 说明 |",
         "|---|---|---|",
     ]
+    files = resolve_files(cfg["files"])
     total = 0
-    for rel in cfg["files"]:
+    for rel in files:
         txt = read_safe(rel)
         if txt is None:
             continue
@@ -155,14 +212,15 @@ def build_pack(name: str, cfg: dict) -> str:
     lines += ["", f"**合计 {total} 行**（约 {total * 4 // 1024}KB），在 DeepSeek 上下文内。", ""]
     lines += ["---", ""]
 
-    for rel in cfg["files"]:
+    for rel in files:
         txt = read_safe(rel)
         if txt is None:
             lines += [f"## ⚠️ 未找到: {rel}", ""]
             continue
         n = txt.count("\n") + 1
+        lang = LANG.get(Path(rel).suffix, "text")
         lines += [f"## ===== {rel}（{n} 行）=====", "",
-                  "```python", txt.rstrip("\n"), "```", ""]
+                  f"```{lang}", txt.rstrip("\n"), "```", ""]
     return "\n".join(lines)
 
 
