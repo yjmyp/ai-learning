@@ -31,9 +31,19 @@ def get_api_key() -> str:
         return k
     cfg = read_text(CONFIG_PATH, "{}")
     try:
-        return json.loads(cfg).get("api_key", "")
+        k = json.loads(cfg).get("api_key", "")
+        if k:
+            return k
     except Exception:
-        return ""
+        pass
+    # 本地 CLI 回退：local_key.py（与 offer_agent_core / batch_score 同一来源）
+    try:
+        from local_key import API_KEY
+        if API_KEY:
+            return API_KEY
+    except Exception:
+        pass
+    return ""
 
 
 def get_model() -> str:
@@ -67,20 +77,32 @@ def daily_limit() -> int:
 
 
 def _usage_today() -> dict:
-    """今天的调用计数，按日期自动归零。"""
+    """今天的调用计数与 Token/成本，按日期自动归零。"""
     today = time.strftime("%Y-%m-%d")
     try:
         u = json.loads(read_text(USAGE_PATH, "{}"))
     except Exception:
         u = {}
     if not isinstance(u, dict) or u.get("date") != today:
-        u = {"date": today, "calls": 0}
+        u = {"date": today, "calls": 0, "prompt_tokens": 0,
+             "completion_tokens": 0, "total_tokens": 0, "cost_yuan": 0.0}
     return u
 
 
-def _bump_usage() -> int:
+def _bump_usage(usage: dict = None, count_call: bool = True) -> int:
+    """记录一次调用（可选附带 usage 计费数据，DeepSeek 单价：输入 ¥0.5/M、输出 ¥2/M）。
+    count_call=False 用于"调用后补记 token/成本"，避免与调用前计数重复。"""
     u = _usage_today()
-    u["calls"] = int(u.get("calls", 0)) + 1
+    if count_call:
+        u["calls"] = int(u.get("calls", 0)) + 1
+    if usage:
+        pt = int(usage.get("prompt_tokens", 0) or 0)
+        ct = int(usage.get("completion_tokens", 0) or 0)
+        u["prompt_tokens"] = int(u.get("prompt_tokens", 0)) + pt
+        u["completion_tokens"] = int(u.get("completion_tokens", 0)) + ct
+        u["total_tokens"] = int(u.get("total_tokens", 0)) + pt + ct
+        u["cost_yuan"] = round(float(u.get("cost_yuan", 0.0))
+                               + pt * 0.5 / 1_000_000 + ct * 2.0 / 1_000_000, 4)
     try:
         USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
         write_text(USAGE_PATH, json.dumps(u, ensure_ascii=False))
@@ -123,6 +145,7 @@ def ask_model(messages: list, model: str = None) -> str:
             err = resp.text[:200]
         raise RuntimeError(f"API 错误（{resp.status_code}）：{err}")
     data = resp.json()
+    _bump_usage(data.get("usage") or {}, count_call=False)   # 补记 tokens/cost（calls 已在调用前计过）
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError):

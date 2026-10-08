@@ -139,15 +139,16 @@ def main():
             "误拒": pct(st["false_refuse"], n_ans),
             "P50延迟ms": round(statistics.median(lat), 0),
             "P95延迟ms": round(sorted(lat)[int(len(lat) * 0.95) - 1], 0),
+            "P99延迟ms": round(sorted(lat)[int(len(lat) * 0.99) - 1], 0),
             "候选数": round(statistics.mean(st["cands"]), 1) if st["cands"] else 0,
             "耗时s": round(time.time() - t0, 1),
         }
         rows.append(row)
         print("%-14s R@1=%.0f%% R@3=%.0f%% R@5=%.0f%% MRR=%.3f "
-              "拒答=%.0f%%(难负例%.0f%%) 误拒=%.0f%% P95=%.0fms"
+              "拒答=%.0f%%(难负例%.0f%%) 误拒=%.0f%% P95=%.0fms P99=%.0fms"
               % (mode, row["R@1"], row["R@3"], row["R@5"], row["MRR"],
                  row["拒答准确"], row["难负例拒答"], row["误拒"],
-                 row["P95延迟ms"]))
+                 row["P95延迟ms"], row["P99延迟ms"]))
 
     # ---------- 写报告 ----------
     os.makedirs(EVAL_DIR, exist_ok=True)
@@ -159,14 +160,14 @@ def main():
              "> 索引：%d 块 / %d 篇资料。命中判据 = 期望块出现在 top-k（不靠关键词猜）。"
              % (engine.store.count(), len(set(it["source"] for it in items if it["source"]))),
              "",
-             "| 模式 | R@1 | R@3 | R@5 | MRR | 拒答准确 | 难负例拒答 | 误拒 | P50 延迟 | P95 延迟 | 候选块 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 模式 | R@1 | R@3 | R@5 | MRR | 拒答准确 | 难负例拒答 | 误拒 | P50 延迟 | P95 延迟 | P99 延迟 | 候选块 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append("| `%s` | %.0f%% | %.0f%% | %.0f%% | %.3f | %.0f%% | %.0f%% | %.0f%% "
-                     "| %.0fms | %.0fms | %.1f |"
+                     "| %.0fms | %.0fms | %.0fms | %.1f |"
                      % (r["mode"], r["R@1"], r["R@3"], r["R@5"], r["MRR"],
                         r["拒答准确"], r["难负例拒答"], r["误拒"],
-                        r["P50延迟ms"], r["P95延迟ms"], r["候选数"]))
+                        r["P50延迟ms"], r["P95延迟ms"], r["P99延迟ms"], r["候选数"]))
     lines += ["", "## 结论（脚本自动填的原始数据，人话解读自己写）", ""]
     if len(rows) >= 2:
         base = rows[0]

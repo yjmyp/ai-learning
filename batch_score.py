@@ -13,6 +13,8 @@ batch_score.py —— 岗位分析师批量打分排序（商业化：按匹配�
 import json
 import os
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -55,34 +57,66 @@ def pending_unmatched(force: bool = False) -> list:
     return out
 
 
-def run_batch(limit: int = None, force: bool = False) -> list:
-    """批量打分核心逻辑（CLI 与 Web 共用）。返回按匹配分降序的 results。"""
+def _score_one(item: tuple, profile: str, reg: dict) -> dict:
+    """单个岗位：拼任务 → 调模型 → 抠分数（只算不写文件，文件由主线程统一写，避免并发写冲突）。"""
+    t0 = time.time()
+    name, company, jd = item
+    task = (f"请评估岗位质量并计算匹配度，只调用 assess_job 和 match_job 两个工具，"
+            f"不要生成话术。\n【岗位】{company or ''} · {name}\n【JD】\n{jd[:800]}\n【画像】\n{profile[:600]}")
+    final, state = run_worker("岗位分析师", task, reg)     # 独立记忆库，不污染用户画像
+    score = extract_score(state.trace)
+    return {"name": name, "company": company, "score": score,
+            "elapsed_s": round(time.time() - t0, 1)}
+
+
+def run_batch(limit: int | None = None, force: bool = False) -> list:
+    """批量打分核心逻辑（CLI 与 Web 共用）。返回按匹配分降序的 results。
+    并发版：每个岗位一次 LLM 调用，互相独立 → 线程池 3 个同时打，串行 13 岗 ≈ 并发后约 1/3 时间。"""
     items = pending_unmatched(force)[:limit] if limit else pending_unmatched(force)
     if not items:
         return []
     profile = load_profile()
     reg = build_registry()
     results = []
-    for i, (name, company, jd) in enumerate(items, 1):
-        print(f"[{i}/{len(items)}] {company or name} …", flush=True)
-        task = (f"请评估岗位质量并计算匹配度，只调用 assess_job 和 match_job 两个工具，"
-                f"不要生成话术。\n【岗位】{company or ''} · {name}\n【JD】\n{jd[:800]}\n【画像】\n{profile[:600]}")
-        final, state = run_worker("岗位分析师", task, reg)     # 独立记忆库，不污染用户画像
-        score = extract_score(state.trace)
-        if score is None:
-            print(f"    ⚠️ {name} 未调 match_job（门禁未闭环），分数缺失，建议人工复核")
-        meta_path = os.path.join(JDS_DIR, name + ".meta.json")
-        try:
-            meta = json.load(open(meta_path, encoding="utf-8"))
-        except Exception:
-            meta = {}
-        meta["match_score"] = score
-        meta["match_verdict"] = gate_verdict(score)
-        json.dump(meta, open(meta_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-        results.append({"岗位": name, "公司": company, "匹配分": score,
-                        "裁决": gate_verdict(score)})
-        print(f"    → {name} 匹配分 {score} {gate_verdict(score)}")
+    t_total = time.time()
+    with ThreadPoolExecutor(max_workers=3) as pool:   # 3 个工人同时跑，map 保持输入顺序
+        for i, res in enumerate(pool.map(lambda it: _score_one(it, profile, reg), items), 1):
+            print(f"[{i}/{len(items)}] {res['company'] or res['name']} …", flush=True)
+            if res["score"] is None:
+                print(f"    ⚠️ {res['name']} 未调 match_job（门禁未闭环），分数缺失，建议人工复核")
+            meta_path = os.path.join(JDS_DIR, res["name"] + ".meta.json")
+            try:
+                meta = json.load(open(meta_path, encoding="utf-8"))
+            except Exception:
+                meta = {}
+            meta["match_score"] = res["score"]
+            meta["match_verdict"] = gate_verdict(res["score"])
+            meta["score_elapsed_s"] = res["elapsed_s"]      # 性能量化：每岗耗时
+            meta["score_run_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            json.dump(meta, open(meta_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+            results.append({"岗位": res["name"], "公司": res["company"],
+                            "匹配分": res["score"], "裁决": gate_verdict(res["score"]),
+                            "耗时s": res["elapsed_s"]})
+            print(f"    → {res['name']} 匹配分 {res['score']} {gate_verdict(res['score'])} "
+                  f"({res['elapsed_s']}s)", flush=True)
     results.sort(key=lambda r: -(r["匹配分"] or 0))
+    # 性能汇总：耗时分布（面试能报 P50/P95/总耗时）
+    el = sorted(r["耗时s"] for r in results)
+    n = len(el)
+    perf = {
+        "count": n,
+        "total_s": round(time.time() - t_total, 1),
+        "per_job_p50_s": round(el[int(n * 0.5) - 1], 1) if n else 0,
+        "per_job_p95_s": round(el[int(n * 0.95) - 1], 1) if n else 0,
+        "max_s": round(el[-1], 1) if n else 0,
+        "workers": 3,
+    }
+    perf_path = os.path.join(HERE, "offeragent", "docs", "batch_score_perf.json")
+    os.makedirs(os.path.dirname(perf_path), exist_ok=True)
+    with open(perf_path, "w", encoding="utf-8") as f:
+        json.dump(perf, f, ensure_ascii=False, indent=2)
+    print(f"  性能：{n} 岗总耗时 {perf['total_s']}s，单岗 P50 {perf['per_job_p50_s']}s / "
+          f"P95 {perf['per_job_p95_s']}s（3 并发）→ offeragent/docs/batch_score_perf.json", flush=True)
     return results
 
 

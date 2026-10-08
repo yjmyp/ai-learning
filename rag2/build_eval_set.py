@@ -44,7 +44,7 @@ GEN_PROMPT = """下面给你 {n} 段中文资料片段。请为**每一段**写�
 {chunks}
 """
 
-# 明确问"库里肯定没有"的内容，用来测拒答
+# 明确问"库里肯定没有"的内容，用来测拒答（easy = 明显跨领域）
 NO_ANSWER = [
     "特斯拉 Model 3 的电池包容量是多少度？",
     "2026 年诺贝尔物理学奖颁给了谁？",
@@ -54,6 +54,36 @@ NO_ANSWER = [
     "用一句话解释量子纠缠，并给出贝尔不等式的推导。",
     "这道菜（番茄炒蛋）的正宗做法是什么？",
     "2027 年春节是几月几号？",
+    "iPhone 17 Pro 的起售价是多少？",
+    "《流浪地球 3》什么时候上映？",
+    "梅西 2022 年世界杯决赛进了几个球？",
+    "中国人民银行 2026 年 3 月的一年期 LPR 是多少？",
+    "杭州亚运会开幕式的总导演是谁？",
+    "红楼梦里贾宝玉的生日是几月几号？",
+    "贵州茅台 2025 年年报的净利润是多少？",
+    "SpaceX 星舰第 12 次试飞成功了吗？",
+    "怎么用 Python 写一个贪吃蛇游戏（完整代码）？",
+    "Django 和 FastAPI 哪个更适合做物联网后端？",
+    "请翻译这段英文到法文：Hello world。",
+    "推荐一部 2026 年评分最高的悬疑电影。",
+]
+
+# hard = 提到库内术语、但答案不在库里的问题（测"看起来能答其实不能"）
+# 模板与库内高频术语组合生成；每条都是库外事实，几乎必然无答案。
+HARD_TERMS = [
+    "Chroma", "BM25", "RAGAS", "bge", "rerank", "DeepSeek", "Streamlit",
+    "HNSW", "Recall@5", "MRR", "RRF", "Embedding", "Chunk", "LoRA",
+    "SSE", "FastAPI", "LangGraph", "向量数据库", "重排模型", "检索增强生成",
+]
+HARD_TEMPLATES = [
+    "{} 的第一个版本是哪一年发布的？",
+    "{} 的作者（核心维护者）是谁？",
+    "{} 是在哪家公司或组织开源的？",
+    "{} 的官方文档一共有多少个页面？",
+    "{} 的开源许可证全文是什么？",
+    "{} 最新版本的发布说明里第一条是什么？",
+    "{} 的开发者团队一共有多少人？",
+    "{} 的官方定价（企业版）是多少？",
 ]
 
 
@@ -112,11 +142,30 @@ def gen_batch(batch, api_key, retries=2):
     return []
 
 
+def build_hard_negatives(limit=20):
+    """程序化生成 hard 难负例：库内术语 × 库外事实模板（提到术语但库里无答案）。"""
+    rng = random.Random(7)
+    terms = list(HARD_TERMS)
+    rng.shuffle(terms)
+    rows = []
+    for i in range(min(limit, len(terms) * len(HARD_TEMPLATES))):
+        term = terms[i % len(terms)]
+        tpl = HARD_TEMPLATES[i // len(terms)]
+        rows.append({
+            "id": "h%02d" % (i + 1),
+            "q": tpl.format(term),
+            "chunk_id": "", "source": "", "head": "", "kw": "",
+            "kind": "no_answer", "hard": True,
+        })
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rebuild", action="store_true", help="先按当前语料重建索引")
-    ap.add_argument("--n", type=int, default=42, help="可回答题条数（默认 42）")
-    ap.add_argument("--per-source", type=int, default=3, help="每篇最多取几个块做素材")
+    ap.add_argument("--n", type=int, default=200, help="可回答题条数（默认 200）")
+    ap.add_argument("--per-source", type=int, default=8, help="每篇最多取几个块做素材")
+    ap.add_argument("--hard", type=int, default=20, help="程序化 hard 难负例条数")
     args = ap.parse_args()
 
     engine = get_engine()
@@ -166,13 +215,15 @@ def main():
             "id": "n%02d" % i, "q": q, "chunk_id": "", "source": "",
             "head": "", "kw": "", "kind": "no_answer",
         })
+    rows += build_hard_negatives(args.hard)
 
     with open(EVAL_PATH, "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     n_ans = sum(1 for r in rows if r["kind"] == "answerable")
-    print("[4/4] 写出 %s：%d 条（可回答 %d + 拒答 %d）"
-          % (EVAL_PATH, len(rows), n_ans, len(rows) - n_ans))
+    n_hard = sum(1 for r in rows if r.get("hard"))
+    print("[4/4] 写出 %s：%d 条（可回答 %d + 拒答 %d，其中 hard 难负例 %d）"
+          % (EVAL_PATH, len(rows), n_ans, len(rows) - n_ans, n_hard))
     srcs = defaultdict(int)
     for r in rows:
         if r["kind"] == "answerable":
