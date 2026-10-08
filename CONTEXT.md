@@ -46,6 +46,14 @@
    - **实测数字（top_k=5）**：纯向量 R@1/3/5 = 69/81/86%、MRR 0.757；**混合(RRF) 74/86/95%、MRR 0.808**；**混合+重排 74/93/98%、MRR 0.832、误拒 0%、P95 63ms**（默认档）；多查询档 R@1 有波动（74~81%）、R@5 95%、P95 1242ms（**结论：性价比低，默认不开**）
    - **拒答从 0% → 100%**：第一版拍的阈值（rerank<0.28）实测完全失效；改为在评估集上网格搜索 → **coverage<0.13** 拦掉全部明显库外问题；再加"**答案级自检**"（只对多少/几/哪年/薪资/参数类问题触发）把 4 条难负例从 0% 拦到 **100%**，误拒仅 2%
    - **面试文档**：`rag2/docs/rag_v3_upgrade.md`（改动清单 + 数据表 + 三条结论 + 四条已知局限 + 三句话讲法 + 追问准备）
+18. **2026-10-08 RAG v3 第二阶段：服务化 + 面试文档升级到 v3**：
+   - **FastAPI 服务化** `rag2/service.py`：`/health` `/stats` `/search` `/ask`（**SSE 流式**）`/reindex`，`SERVICE_API_KEY` 保护写操作
+   - **trace 可观测** `rag2/trace.py`：每次问答落 JSONL（问题/改写/候选/引用来源/耗时/token/**成本**），`/stats` 直接给 **P50/P95 延迟、拒答率、单次成本**（实测单次 ~1.4s / ~0.0003 元）
+   - **增量索引** `rag2/index_incr.py`：按 source 先删旧块再写新块，改一篇不用全量重建（`store.delete_by_source`）
+   - **Docker 化** `rag2/Dockerfile` + `docker-compose.yml` + `.dockerignore` + `requirements-service.txt`（CPU 版 torch，密钥走环境变量，data 挂 volume）
+   - **QA 层** `rag2/qa_v3.py`：检索 → 拒答门禁 → 答案级自检 → **结构化引用**（编号/来源/片段/分数/chunk_id）→ 流式生成
+   - **验收** `rag2/test_service.py` **7/7 通过**（健康/索引统计/检索带分/问答带引用/库外拒答/SSE 187 个增量块/trace 指标聚合）
+   - **面试文档升级**：`interview-prep/01-rag-deep-dive.md` 加"八、v3 升级补充"（数据表 + 三个必讲决策 + v3 高频追问 6 条）；`interview-prep/03-offeragent-deep-dive.md` 加"八、Agent 四层框架对照"（Planning/Memory/Tool/Reflection + 工程化 + 部署的现状/缺口/补法，含 LangGraph 对标话术与生态现状：AutoGen 已维护模式等）
 
 ## 接下来计划（2026-08-15 起，v4）
 
