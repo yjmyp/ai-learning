@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
-    TOKENIZERS_PARALLELISM=false
+    TOKENIZERS_PARALLELISM=false \
+    SERVICE_WARMUP=1
 
 WORKDIR /app
 
@@ -22,8 +23,12 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 COPY . .
 
 EXPOSE 8600
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
-    CMD curl -fs http://localhost:8600/health || exit 1
+# 探针分工：这里查 /live（存活，秒回、不碰模型）。
+# 排到 K8s/Nginx 时，就绪探针请用 /ready（索引为空会返回 503，网关先别转流量）。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s \
+    CMD curl -fs http://localhost:8600/live || exit 1
 
-# --workers 1：向量模型在进程内，起多 worker 会翻倍占内存（要扩就上 gunicorn+uvicorn worker）
+# 启动预热：把模型加载 + BM25 建索引提前做掉（实测能让首请求从 15.3s 降到 ~0.07s）。
+# --workers 1：向量模型在进程内，起多 worker 会翻倍占内存；要扩容改 WEB_CONCURRENCY
+# 并在压测下确认内存（见 eval/loadtest_report.md 的扩容路径）。
 CMD ["uvicorn", "service:app", "--host", "0.0.0.0", "--port", "8600", "--workers", "1"]

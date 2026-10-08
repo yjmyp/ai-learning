@@ -13,11 +13,17 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE_DIR)
 
-# 知识库资料目录：把 .txt/.md/.pdf/.docx 放进去即可入库
-DOCS_DIRS = [
-    os.path.join(REPO_ROOT, "学习笔记"),
-    os.path.join(REPO_ROOT, "rag", "notes"),
-]
+# 知识库资料目录：把 .txt/.md/.pdf/.docx/.html/.csv/.xlsx 放进去即可入库
+# 生产环境用 RAG2_DOCS_DIRS 覆盖（os.pathsep 分隔，Linux 是 ':'，Windows 是 ';'），
+# 这样容器里只需挂载资料目录，不用把仓库的相对路径假设写死进代码。
+_env_docs = os.environ.get("RAG2_DOCS_DIRS", "").strip()
+if _env_docs:
+    DOCS_DIRS = [p for p in _env_docs.split(os.pathsep) if p.strip()]
+else:
+    DOCS_DIRS = [
+        os.path.join(REPO_ROOT, "学习笔记"),
+        os.path.join(REPO_ROOT, "rag", "notes"),
+    ]
 
 # Chroma 持久化目录（云端可设 RAG2_CHROMA_DIR 指向可写目录）
 if os.environ.get("RAG2_CHROMA_DIR"):

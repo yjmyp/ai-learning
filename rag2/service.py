@@ -2,23 +2,36 @@
 """RAG v3 HTTP 服务（FastAPI）：把项目从"本地能跑"变成"能部署、能被调用"
 
 端点：
-    GET  /health          服务与索引状态
+    GET  /live            存活探针（极轻，不加载模型）——给 K8s livenessProbe
+    GET  /ready           就绪探针（索引非空才 200，否则 503）——给 readinessProbe
+    GET  /health          服务与索引详情（会加载模型，较重）
     GET  /stats           索引规模（按来源分组）+ 服务指标（来自 trace）
     POST /search          {q, mode, top_k} → 检索结果（带分数与来源）
     POST /ask             {q, mode, top_k, stream} → 带引用的回答；stream=true 返回 SSE
     POST /reindex         {force} → 重建索引（需 X-API-Key，防止被误触发）
+
+探针分工（线上必须区分，否则会出现"模型正在加载却被判死"或"索引空却接流量"）：
+    liveness  → /live   只问进程活着没，绝不能碰模型（探针每秒都在打）
+    readiness → /ready  只问能不能接流量（索引块数 > 0）
 
 启动：
     uvicorn service:app --port 8600            （在 rag2 目录下）
     docker compose up --build                  （容器方式，见 Dockerfile）
 
 鉴权：设了环境变量 SERVICE_API_KEY 时，/ask 与 /reindex 需要请求头 X-API-Key。
+限流：SERVICE_RATE_LIMIT / SERVICE_RATE_WINDOW 控制固定窗口速率，探针端点不占额度。
 """
 import json
 import os
 import sys
 import time
 import uuid
+import threading
+from contextlib import asynccontextmanager
+from collections import deque
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,9 +46,121 @@ from engine import get_engine
 from qa_v3 import answer as answer_v3
 from retriever_v3 import ALL_MODES, RetrieverV3
 
-app = FastAPI(title="RAG v3 检索服务", version="3.0")
 _engine = None
 _retriever = None
+
+
+def _warmup():
+    """启动预热：把模型加载 + BM25 索引构建 + Chroma 首次查询都提前做掉。
+
+    压测实测：不预热时**第一个真实请求要等 15.3 秒**（见 eval/loadtest_report.md），
+    预热后稳态 P50 只有 66ms。开启方式：SERVICE_WARMUP=1（Dockerfile 里默认开）。
+    """
+    if os.environ.get("SERVICE_WARMUP", "0") not in ("1", "true", "yes"):
+        return {"warmed": False, "reason": "SERVICE_WARMUP 未开启"}
+    t0 = time.time()
+    try:
+        eng, ret = engine()
+        if eng.store.count() == 0:
+            return {"warmed": False, "reason": "索引为空，跳过预热（先建库）"}
+        for mode in ("vector", "hybrid_rerank"):     # 各有独立的懒加载路径
+            ret.retrieve("预热查询：什么是 RAG？", top_k=1, mode=mode)
+        ms = round((time.time() - t0) * 1000, 1)
+        trace_mod.log("warmup", ok=True, latency_ms=ms)
+        print("[warmup] 预热完成：%.0f ms" % ms, flush=True)
+        return {"warmed": True, "latency_ms": ms}
+    except Exception as e:                            # 预热失败不能拖垮启动
+        trace_mod.log("warmup", ok=False, error=str(e)[:200])
+        print("[warmup] 预热失败（不影响启动）：%s" % e, flush=True)
+        return {"warmed": False, "reason": str(e)[:200]}
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    """启动钩子：预热。放后台线程跑，避免把端口监听也一起挡住。"""
+    global _warmup_result
+    th = threading.Thread(target=lambda: _warmup_result.update(_warmup()),
+                          name="warmup", daemon=True)
+    th.start()
+    yield
+
+
+_warmup_result = {}
+
+app = FastAPI(title="RAG v3 检索服务", version="3.0", lifespan=_lifespan)
+
+# ---------------- 生产化：鉴权 / 限流 / 请求 ID / 结构化错误 ----------------
+SERVICE_VERSION = "3.1.0"
+_STARTED_AT = time.time()
+RATE_LIMIT = int(os.environ.get("SERVICE_RATE_LIMIT", "60"))   # 每窗口允许的请求数
+RATE_WINDOW = float(os.environ.get("SERVICE_RATE_WINDOW", "60"))  # 窗口秒数
+# 探针/文档类端点不计入限流：负载均衡和 K8s liveness 会高频打 /health，
+# 若算进用户配额，正常流量会被探针挤爆（这是限流最常见的线上踩坑）。
+EXEMPT_PATHS = frozenset({"/health", "/live", "/ready", "/version",
+                          "/docs", "/openapi.json", "/redoc"})
+_hits = {}                       # key -> deque[timestamps]
+_hits_lock = threading.Lock()
+
+
+def _client_key(request):
+    return (request.headers.get("x-api-key")
+            or (request.client.host if request.client else "unknown"))
+
+
+def _rate_ok(key):
+    """固定窗口限流（够用且可解释；要更平滑可换令牌桶）。"""
+    now = time.time()
+    with _hits_lock:
+        q = _hits.setdefault(key, deque())
+        while q and now - q[0] > RATE_WINDOW:
+            q.popleft()
+        if len(q) >= RATE_LIMIT:
+            return False, len(q)
+        q.append(now)
+        return True, len(q)
+
+
+@app.middleware("http")
+async def _observe(request: Request, call_next):
+    """给每个请求配 ID、做限流、异常统一成结构化错误（不把堆栈丢给客户端）。"""
+    rid = uuid.uuid4().hex[:12]
+    path = str(request.url.path)
+    key = _client_key(request)
+    if path in EXEMPT_PATHS:
+        # 探针不占额度，只看当前用量，用于回填 X-RateLimit-Remaining
+        with _hits_lock:
+            used = len(_hits.get(key, ()))
+        ok = True
+    else:
+        ok, used = _rate_ok(key)
+    if not ok:
+        resp = JSONResponse(status_code=429, content={
+            "error": {"code": "rate_limited",
+                      "message": "请求过于频繁，%d 秒内上限 %d 次" % (RATE_WINDOW, RATE_LIMIT),
+                      "request_id": rid}})
+        resp.headers["Retry-After"] = str(int(RATE_WINDOW))
+        resp.headers["X-Request-ID"] = rid
+        resp.headers["X-RateLimit-Limit"] = str(RATE_LIMIT)
+        resp.headers["X-RateLimit-Remaining"] = "0"
+        trace_mod.log("http", request_id=rid, path=path,
+                      status=429, client=key[:24])
+        return resp
+    t0 = time.time()
+    try:
+        resp = await call_next(request)
+    except Exception as e:                       # 未捕获异常 → 结构化 500
+        trace_mod.log("http", request_id=rid, path=path,
+                      status=500, error=str(e)[:200])
+        resp = JSONResponse(status_code=500, content={
+            "error": {"code": "internal_error", "message": str(e)[:200],
+                      "request_id": rid}})
+    resp.headers["X-Request-ID"] = rid
+    resp.headers["X-RateLimit-Limit"] = str(RATE_LIMIT)
+    resp.headers["X-RateLimit-Remaining"] = str(max(RATE_LIMIT - used, 0))
+    trace_mod.log("http", request_id=rid, path=path,
+                  status=getattr(resp, "status_code", 0),
+                  latency_ms=round((time.time() - t0) * 1000, 1))
+    return resp
 
 
 def engine():
@@ -82,13 +207,43 @@ class ReindexReq(BaseModel):
 @app.get("/health")
 def health():
     eng, _ = engine()
-    return {"status": "ok", "index_chunks": eng.store.count(),
+    return {"status": "ok", "version": SERVICE_VERSION,
+            "index_chunks": eng.store.count(),
             "embed_model": config.EMBED_MODEL, "llm_model": config.LLM_MODEL,
             "modes": ALL_MODES, "server_time": time.strftime("%Y-%m-%d %H:%M:%S")}
 
 
+@app.get("/live")
+def live():
+    """存活探针：不触碰模型/索引，保证秒回。"""
+    return {"status": "alive", "version": SERVICE_VERSION,
+            "pid": os.getpid(), "uptime_s": round(time.time() - _STARTED_AT, 1)}
+
+
+@app.get("/ready")
+def ready():
+    """就绪探针：索引为空说明还在建库，此时返回 503 让网关先别转流量过来。"""
+    eng, _ = engine()
+    n = eng.store.count()
+    body = {"status": "ready" if n else "indexing", "version": SERVICE_VERSION,
+            "index_chunks": n, "modes": ALL_MODES}
+    if not n:
+        return JSONResponse(status_code=503, content=body)
+    return body
+
+
+@app.get("/version")
+def version():
+    """给部署用：一眼看出线上跑的是哪版（配合本地指纹比对）。"""
+    return {"service": SERVICE_VERSION, "protocol": "rest+sse",
+            "modes": ALL_MODES, "rate_limit": "%d req / %ds" % (RATE_LIMIT, RATE_WINDOW),
+            "auth_required": bool(os.environ.get("SERVICE_API_KEY", "")),
+            "warmup": _warmup_result}
+
+
 @app.get("/stats")
-def stats():
+def stats(x_api_key: str = Header(default="")):
+    _check_key(x_api_key)          # 索引规模与服务指标属于内部信息，要鉴权
     eng, _ = engine()
     data = eng.store.get_all()
     by_src = Counter((m or {}).get("source", "") for m in data["metadatas"])
@@ -99,9 +254,11 @@ def stats():
 
 
 @app.post("/search")
-def search(req: SearchReq):
+def search(req: SearchReq, x_api_key: str = Header(default="")):
+    _check_key(x_api_key)
     if req.mode not in ALL_MODES:
-        raise HTTPException(status_code=400, detail="mode 必须是 %s" % ALL_MODES)
+        raise HTTPException(status_code=422, detail={
+            "code": "bad_mode", "message": "mode 必须是 %s" % ALL_MODES})
     _, retriever = engine()
     res = retriever.retrieve(req.q, top_k=req.top_k, mode=req.mode)
     hits = [{"id": h["id"], "source": h.get("source"),

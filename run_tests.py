@@ -4,6 +4,7 @@
 用法:
     python run_tests.py            # 跑全部离线测试（跳过 live/网络/API 类）
     python run_tests.py --live     # 连 live/网络/API 类一起跑（会真实调用 API，费额度）
+    python run_tests.py --service  # 额外跑 rag2 服务化测试（起端口，约 1 分钟）
 
 规则:
     - 文件名含 "live" 或 "_live" 的测试默认跳过（需真实网络/API key）
@@ -17,16 +18,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 OFFERAGENT = ROOT / "offeragent"
+RAG2 = ROOT / "rag2"
 PY = sys.executable
 
-def collect_tests():
+def collect_tests(with_service: bool = False):
     tests = []
-    for base in (ROOT, OFFERAGENT):
+    bases = [ROOT, OFFERAGENT] + ([RAG2] if with_service else [])
+    for base in bases:
         for p in sorted(base.glob("test_*.py")):
             if not p.name.startswith("test_"):
                 continue
             if p.name.startswith("test_agent.py") and base is not ROOT:
                 continue  # 根目录的 test_agent.py 是主回归，避免重复
+            if base is RAG2 and p.name in ("test_rag2.py", "test_p3.py"):
+                continue  # 检索质量回归，含模型加载，本地按需单跑
             tests.append(p)
     return tests
 
@@ -44,7 +49,8 @@ def needs_service(p: Path) -> bool:
 def run_one(p: Path, timeout: int = 300):
     try:
         r = subprocess.run([PY, str(p)], capture_output=True, text=True,
-                           timeout=timeout, cwd=str(p.parent))
+                           timeout=timeout, cwd=str(p.parent),
+                           encoding="utf-8", errors="replace")  # Windows 控制台默认 GBK，会解码崩
         ok = r.returncode == 0
         tail = (r.stdout or r.stderr).strip().splitlines()
         tail = "\n".join(tail[-4:]) if tail else "(无输出)"
@@ -57,10 +63,11 @@ def run_one(p: Path, timeout: int = 300):
 def main():
     live = "--live" in sys.argv
     browser = "--browser" in sys.argv
-    tests = collect_tests()
+    service = "--service" in sys.argv
+    tests = collect_tests(with_service=service)
     passed, failed, skipped = [], [], []
 
-    print(f"== OfferAgent 测试总入口 ==")
+    print(f"== 项目测试总入口 ==")
     print(f"发现 {len(tests)} 个测试文件（{'含 live' if live else '跳过 live/网络类'}"
           f"{'，含浏览器验收' if browser else '，跳过浏览器验收'}）\n")
 

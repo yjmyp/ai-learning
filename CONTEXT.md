@@ -68,12 +68,23 @@
    - **OfferAgent 记忆 embedding 化** `offeragent/memory_vec.py`：长期记忆三档自动降级（bge 向量 → TF-IDF → 词面重合），`context_block()` 召回结果注入 Agent system；并接入 `run_agent`。踩坑：**加载 bge 前必须先设 HF_HUB_OFFLINE，否则联网查版本会卡死几分钟**（这次真卡了 10 分钟）
    - **OfferAgent Docker 化** `offeragent/Dockerfile` + `docker-compose.yml`：构建上下文=仓库根、密钥走环境变量、`offeragent/data` 挂 volume；本机没装 Docker，用 `test_docker_static.py` 做静态校验（12/12）
    - **验收**：`rag2/test_p3.py` **7/7**、`offeragent/test_agent_v3.py` **11/11**（含真起 MCP 子进程跑 JSON-RPC）、`test_docker_static.py` **12/12**
-   - **另交付**：`学习笔记/任务提示词模板.md`（从真实对话提炼的 6 个模式 + 优化点 + 任务卡模板 + 5 个高频任务提示词 + 4 条硬约束）
+  - **另交付**：`学习笔记/任务提示词模板.md`（从真实对话提炼的 6 个模式 + 优化点 + 任务卡模板 + 5 个高频任务提示词 + 4 条硬约束）
+
+21. **2026-10-08 晚 生产级补齐 + 简历数字同步 + 讲法补齐**：
+   - **简历数字同步**：`简历/余剑-简历-AI应用开发实习-v6.md` 与 `offeragent/resume_content.py`（模板/PDF 数据源）同步为 **28 篇 / 622 块 / 54 条评估集 / 混合+重排 top-5 98% / 拒答 100% / 结构化打分方差 0.00 vs 旧法 3.31**；内容变长后收紧 `resume_styles.py` 打印样式，三套模板各 1 页
+   - **interview-prep 六项讲法**：`01-rag-deep-dive.md` 加 8.6（句级引用定位/多格式解析/服务化/Docker + 3 条追问）；`03-offeragent-deep-dive.md` 加 8.4（四层框架补齐：Plan/Reflect/MCP/记忆/工程化/部署 + 2 个踩坑）；本轮再加 **8.7 生产化** 与 **8.5 商业化就绪度**
+   - **RAG 服务生产化（有数字）**：压测脚本 `rag2/loadtest.py` → 报告 `rag2/eval/loadtest_report.md`：**冷启动 15 333ms → 加 `SERVICE_WARMUP=1` 启动预热后首请求 62ms**；稳态并发 1/2/4/8 = 14/18/20/**22.6 QPS**（P95 86→388ms，瓶颈=单进程 CPU 向量推理）
+   - **探针分工 + 限流**：新增 `/live`（秒回不碰模型）、`/ready`（索引空 503）；`/health` 保持详情；探针端点不占限流额度（探针挤爆用户配额的坑）；429 带 Retry-After + 结构化错误
+   - **验收**：`rag2/test_service_prod.py` **13/13**（401/422/429/503/探针不占额度/X-Request-ID/剩余额度头）；`run_tests.py` **18 通过 / 0 失败 / 12 跳过**（新增 `--service` 开关跑 rag2 服务测试）
+   - **CI + Docker 真构建**：`.github/workflows/ci.yml` 三档（离线单测 / 真建索引+服务验收 / Docker 真构建）；`test_docker_build.py`（没 Docker 自动降级静态校验，`RUN_DOCKER_BUILD=1` 才真构建）
+   - **仓库卫生门禁** `test_repo_hygiene.py` 5/5：已跟踪文件无真 key、secrets/data 未入库、.gitignore 覆盖（把早期"key 随 push 泄露"的教训固化成测试）
+   - **商业化评估** `offeragent/docs/production_readiness.md`：判定标准 + 逐项证据 + 剩余缺口。结论：技术侧到生产级；产品侧仍是"单人工具"（缺多用户数据隔离 2-3 天、隐私合规 1 天）；商业化程度约 30%
 
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`
-> 2026-10-01 状态（最新）：**OfferAgent 功能已收口，当前唯一硬缺口仍是"真实投递数 = 0"**。立即做：① 用 OfferAgent 每天真实投 3-5 家（从 88 分可转正岗开始）② 跑满 4 周运营流程攒真实数据 ③ 简历/README 数字同步到云端。别再规划，只执行。
+> **2026-10-08 状态（最新）**：两个项目的技术侧已到生产级（可部署/可观测/可验证/有容量数字），**唯一硬缺口仍是"真实投递数 = 0"**。立即做：① 每天真实投 3-5 家（从 88 分可转正岗开始，发送动作永远人点）② 每投一家就记结果，攒 4 周真实数据 ③ 商业化的两个非技术缺口（多用户数据隔离、隐私合规）排在投递之后，见 `offeragent/docs/production_readiness.md`。
+> 2026-10-01 状态：OfferAgent 功能已收口。① 每天真实投 3-5 家 ② 跑满 4 周运营流程 ③ 简历/README 数字同步到云端。别再规划，只执行。
 > 2026-08-17 裁决：外部方案评估 + 全网交叉验证已定稿，见 `学习笔记/最终裁决与证据链.md`；执行节奏 = 8/18 首投 3-4 家 → 8/25 前 RAG 收尾（BM25+Ragas+必杀题）→ 9/5 前 Agent 项目 2 → 9/16 批量投。停止再规划，只执行。守卫已验证、简历一页 PDF 已出，明天只做首投 + RAG D2。
 > 2026-08-18 追加：抖音 11 条检索校准（7 项采纳）已写入 PLAN；手机助手升 v2。待办顺延：Calix 首投 + BM25 eval 验证。
 

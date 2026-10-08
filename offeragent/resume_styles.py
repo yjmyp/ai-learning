@@ -47,19 +47,19 @@ li::marker { color: #9AA6B8; }
 .foot { font-size: 10.5px; color: #9CA3AF; margin-top: 16px; border-top: 1px solid #EEF1F5;
         padding-top: 8px; }
 @media print {
-  body { background: #fff; font-size: 10.9px; line-height: 1.42; }
+  body { background: #fff; font-size: 10.2px; line-height: 1.34; }
   .page { width: auto; margin: 0; box-shadow: none; padding: 0 8mm; }
   h1 { font-size: 20px; margin: 0 0 2px; } .role { font-size: 12px; margin-bottom: 3px; }
-  .meta { font-size: 10.6px; line-height: 1.52; } .links { font-size: 10.6px; margin-top: 2px; }
-  h2 { font-size: 12.4px; margin: 6px 0 3px; padding-bottom: 2px; }
-  .proj { margin-bottom: 5px; }
-  .proj-title { font-size: 12.2px; }
-  .result { font-size: 10.6px; padding: 2px 6px; margin: 2px 0 3px; }
-  .tech { font-size: 10.4px; margin: 1px 0 2px; }
-  ul { padding-left: 13px; } li { margin: 1px 0; }
-  .photo img { width: 84px; height: 112px; }
-  .foot { margin-top: 4px; padding-top: 4px; }
-}
+  h1 { font-size: 19px; margin: 0 0 2px; } .role { font-size: 11.4px; margin-bottom: 2px; }
+  .meta { font-size: 10.1px; line-height: 1.45; } .links { font-size: 10.1px; margin-top: 1px; }
+  h2 { font-size: 11.8px; margin: 5px 0 2px; padding-bottom: 1px; }
+  .proj { margin-bottom: 4px; }
+  .proj-title { font-size: 11.6px; }
+  .result { font-size: 10px; padding: 1px 5px; margin: 1px 0 2px; }
+  .tech { font-size: 9.9px; margin: 1px 0 1px; gap: 3px; }
+  ul { padding-left: 12px; } li { margin: 0; }
+  .photo img { width: 76px; height: 101px; }
+  .foot { margin-top: 3px; padding-top: 3px; }
 """
 
 CSS_SIDEBAR = """
@@ -166,21 +166,21 @@ li { margin: 3px 0; }
 .foot { font-size: 11px; color: #666; margin-top: 14px; border-top: 1px solid #ddd;
         padding-top: 7px; }
 @media print {
-  body { background: #fff; font-size: 10.8px; line-height: 1.4; }
+  body { background: #fff; font-size: 10.1px; line-height: 1.33; }
   .page { width: auto; margin: 0; box-shadow: none; padding: 0 10mm; }
   h1 { font-size: 19px; margin-bottom: 3px; letter-spacing: 2px; }
-  .role { font-size: 11.6px; margin-bottom: 4px; }
-  .meta { font-size: 10.6px; line-height: 1.5; }
-  .links { font-size: 10.6px; margin-top: 2px; }
-  h2 { font-size: 12.2px; margin: 8px 0 4px; padding-bottom: 3px; }
-  .proj { margin-bottom: 6px; }
-  .proj-title { font-size: 11.8px; }
-  .result { font-size: 10.4px; margin: 2px 0 3px; }
-  .tech { font-size: 10.2px; margin-bottom: 3px; }
-  ul { padding-left: 14px; } li { margin: 1px 0; }
-  .photo img { width: 76px; height: 101px; }
-  .foot { margin-top: 6px; padding-top: 4px; }
-}
+  h1 { font-size: 18px; margin-bottom: 2px; letter-spacing: 2px; }
+  .role { font-size: 11px; margin-bottom: 3px; }
+  .meta { font-size: 10px; line-height: 1.42; }
+  .links { font-size: 10px; margin-top: 1px; }
+  h2 { font-size: 11.6px; margin: 6px 0 3px; padding-bottom: 2px; }
+  .proj { margin-bottom: 4px; }
+  .proj-title { font-size: 11.4px; }
+  .result { font-size: 10px; margin: 1px 0 2px; }
+  .tech { font-size: 9.8px; margin-bottom: 2px; }
+  ul { padding-left: 13px; } li { margin: 0; }
+  .photo img { width: 70px; height: 93px; }
+  .foot { margin-top: 4px; padding-top: 3px; }
 """
 
 CSS_TIMELINE = """
