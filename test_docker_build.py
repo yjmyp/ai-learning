@@ -96,16 +96,20 @@ def main():
         reason = info if not ok else "未设置 RUN_DOCKER_BUILD=1（真构建太重，按需开启）"
         print("  [跳过] 真构建：%s" % reason)
     else:
-        checks.append(("rag2 服务镜像真构建并打 /ready",
-                       build_and_probe("rag2", ["-f", os.path.join(ROOT, "rag2", "Dockerfile")],
-                                       "rag2-svc:test", ["-p", "18600:8600"],
-                                       "http://127.0.0.1:18600/live")[0]))
-        checks.append(("OfferAgent 镜像真构建并打 Streamlit 健康检查",
-                       build_and_probe(
-                           "offeragent",
-                           ["-f", os.path.join(ROOT, "offeragent", "Dockerfile")],
-                           "offeragent:test", ["-p", "18501:8501"],
-                           "http://127.0.0.1:18501/_stcore/health")[0]))
+        rag2_res = build_and_probe("rag2", ["-f", os.path.join(ROOT, "rag2", "Dockerfile")],
+                                   "rag2-svc:test", ["-p", "18600:8600"],
+                                   "http://127.0.0.1:18600/live")
+        checks.append(("rag2 服务镜像真构建并打 /ready", rag2_res[0]))
+        if not rag2_res[0]:
+            print("  [rag2 失败详情] " + rag2_res[1])
+        oa_res = build_and_probe(
+            "offeragent",
+            ["-f", os.path.join(ROOT, "offeragent", "Dockerfile")],
+            "offeragent:test", ["-p", "18501:8501"],
+            "http://127.0.0.1:18501/_stcore/health")
+        checks.append(("OfferAgent 镜像真构建并打 Streamlit 健康检查", oa_res[0]))
+        if not oa_res[0]:
+            print("  [OfferAgent 失败详情] " + oa_res[1])
 
     passed = sum(1 for _, v in checks if v is True)
     failed = [n for n, v in checks if v is False]

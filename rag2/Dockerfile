@@ -1,4 +1,6 @@
 # RAG v3 服务镜像：docker compose up --build 即可起一个能被调用的检索服务
+# 注意：构建上下文是仓库根目录（与 offeragent/Dockerfile 约定一致），
+#   COPY 源路径必须带 rag2/ 前缀，否则 docker build 会去找根目录下不存在的文件。
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -15,12 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential libgomp1 curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-service.txt .
+COPY rag2/requirements-service.txt /app/requirements-service.txt
 # CPU 版 torch：镜像体积从 ~2.5G 降到 ~1G，本地服务用不到 GPU
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
-        -r requirements-service.txt
+        -r /app/requirements-service.txt
 
-COPY . .
+COPY rag2/ /app
 
 EXPOSE 8600
 # 探针分工：这里查 /live（存活，秒回、不碰模型）。
