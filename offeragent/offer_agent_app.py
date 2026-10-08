@@ -85,6 +85,7 @@ REPORTS_DIR = DATA_DIR / "reports"
 # 页面域模块（2026-09-29 拆分，减小单文件体积）
 # ============================================================
 from pages_home import *
+from agent_trace_view import page_agent_trace
 from pages_work import *
 from pages_match import *
 from pages_more import *
@@ -119,11 +120,13 @@ if os.environ.get("GITHUB_PAT") and not (DATA_DIR / "jds").exists():
 # ============================================================
 def page_today_hub():
     """今天：要做什么 + 做得怎么样。统计放进同一页的第二个页签，口径只有这一处。"""
-    t1, t2 = st.tabs(["行动清单", "数据与日志"])
+    t1, t2, t3 = st.tabs(["行动清单", "数据与日志", "Agent 运行记录"])
     with t1:
         page_today()
     with t2:
         page_data_log()
+    with t3:
+        page_agent_trace()
 
 
 def page_interview():

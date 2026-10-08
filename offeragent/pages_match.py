@@ -32,6 +32,54 @@ import resume_builder
 import resume_clean
 import resume_templates
 
+def render_struct_score(profile, jd, meta, name, model_score=None):
+    """结构化匹配分面板：本地五维加权，不依赖模型报告（所以进页面就能看）。"""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _root = str(_Path(__file__).resolve().parent.parent)
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)              # match_score.py 在仓库根目录
+    try:
+        import match_score as _ms
+        res = _ms.score_job(profile, jd, meta, name=name)
+    except Exception as e:
+        st.caption("（结构化打分模块不可用：%s）" % str(e)[:80])
+        return
+    st.markdown("##### 🧮 结构化匹配分（本地五维加权，同样的输入永远同一个分）")
+    c1, c2, c3 = st.columns([1, 1, 2])
+    c1.metric("结构化总分", "%d" % res["score"], help=res["method"])
+    c2.metric("模型主观分", ("%s" % model_score) if model_score is not None else "未跑",
+              help="模型读报告给的分，只作参考：同一岗位重复跑会波动（实测平均 ±3.31 分）")
+    c3.markdown("**裁决**：" + res["verdict"])
+    for d in res["dims"]:
+        st.markdown(
+            '<div style="margin:2px 0;">'
+            '<span class="oa-tag oa-tag-blue">%s</span>'
+            '<b style="margin:0 6px;">%d</b>'
+            '<span style="color:#94A3B8;font-size:12px;">权重 %.2f</span>'
+            '　<span style="font-size:12.5px;">%s</span></div>'
+            % (d["label"], d["score"], d["weight"], d["evidence"]),
+            unsafe_allow_html=True)
+    if res["hard_blocks"]:
+        st.error("硬门槛冲突：" + "；".join(res["hard_blocks"]) + "　→ 分数再高也别投")
+    with st.expander("为什么是这个分（完整证据）"):
+        st.markdown("**JD 里识别到的技能词**：" + ("、".join(res["jd_terms"]) or "无"))
+        st.markdown("**命中**：" + ("、".join(res["matched"]) or "无"))
+        st.markdown("**缺失**：" + ("、".join(res["missing"]) or "无"))
+        st.caption("维度权重：硬技能 0.30 / 项目证据 0.25 / 地点 0.15 / 时间 0.15 / 门槛 0.15。"
+                   "一致性评估：旧法平均波动 3.31 分，结构化法 0.00 分"
+                   "（见 offeragent/docs/match_consistency.md）。")
+    if st.button("💾 用结构化分覆盖岗位库里的分数", key="use_struct_" + name[:20]):
+        meta["match_score"] = res["score"]
+        meta["match_method"] = res["method"]
+        meta["match_dims"] = res["dims"]
+        meta["match_hard_blocks"] = res["hard_blocks"]
+        save_meta(name, meta)
+        st.success("已写入 %d 分（结构化）" % res["score"])
+        st.rerun()
+    st.markdown("---")
+
+
 def page_match():
     hero("匹配分析", "画像 × JD → 匹配度 + 五维雷达 + 逐条拆解（卡片式）")
     jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
@@ -87,6 +135,8 @@ def page_match():
                     st.error(str(e))
         return
 
+    # ---------- 结构化打分（v3：本地五维，可复算、可解释，不依赖模型报告） ----------
+    render_struct_score(profile, jd, meta, name)
     cache_key = f"match_{name}.md" if not name.endswith("URL直配") else None
     cached = read_text(MATCH_DIR / cache_key) if cache_key else ""
     if cached:
@@ -116,6 +166,7 @@ def page_match():
 
     score = extract_score(report)
     dims = extract_dim_scores(report)
+    render_struct_score(profile, jd, meta, name, model_score=score)
     c1, c2 = st.columns([1, 1.2])
     with c1:
         if score is not None:
