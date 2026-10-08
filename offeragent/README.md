@@ -70,6 +70,12 @@
 - **L1 密码门**：密码 SHA-256 哈希存储（`data/config.json` 或 Secrets `APP_PASSWORD`）。
 - **5 套主题**（含深色 Night）。
 
+## 界面预览
+
+| 首页（行动 + 数据） | Agent 流程（引擎演示） | 投递台 | 岗位库 |
+|---|---|---|---|
+| ![首页](docs/screenshots/01_home.png) | ![Agent](docs/screenshots/02_agent.png) | ![投递台](docs/screenshots/03_apply.png) | ![岗位库](docs/screenshots/04_jobs.png) |
+
 ## 快速开始（本地）
 
 ```bash
@@ -112,8 +118,8 @@ DEEPSEEK_API_KEY = "sk-你的key"
 APP_PASSWORD = "给工作台设的访问密码"
 ```
 
-4. Deploy → 2 分钟拿到公开链接（**在线地址：_你的 Streamlit Cloud 链接，填到这里_**）
-5. 数字名片页：公开链接后加 `/?twin=1`（免密码，供 HR 访问）
+4. Deploy → 2 分钟拿到公开链接（**在线地址：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app**）
+5. 数字名片页：公开链接后加 `/?twin=1`（免密码，供 HR 访问）→ https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/?twin=1
 
 > 依赖策略：`requirements.txt` 用 `>=` 下限（不锁死版本）——Streamlit Cloud 每次部署装最新已验证兼容版本，避免锁旧版踩依赖坑。
 
