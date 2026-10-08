@@ -60,6 +60,15 @@
    - **接入界面**：`pages_match.py` 新增 `render_struct_score()`，**进页面立刻显示**结构化分 + 五维证据 + 硬门槛红字 + 一键写回岗位库（不再依赖模型报告先跑）
    - **trace 可视化** `offeragent/agent_trace_view.py`：作为「今天」页第三个 tab「Agent 运行记录」，给运行次数 / 平均步数 / 工具调用分布 / 工具覆盖率 / 每次运行时间线（步 → 工具 → 参数摘要 → 结果）
    - **验收**：全量 10 页巡检无报错；Match 页实测显示"结构化总分 89 / 命中 python、大模型、agent…/ 缺 llm、prompt…"；今日页三个 tab 都在
+20. **2026-10-08 欠账六项全部完成（RAG P3 + OfferAgent P1）**：
+   - **RAG P3-a 句级引用定位** `rag2/locate.py`：从命中块里再挑"真正回答问题的那句"（词面覆盖 0.75 + 长度 + 数字加权），返回 `quote/offset/score`；`qa_v3.citations()` 升级成带句级引文与字符偏移（前端可高亮）
+   - **RAG P3-b 多格式解析** `rag2/loader.py`：新增 `.html/.htm`（标准库 HTMLParser 剥标签、丢 script/style）、`.csv`（列名:值 可读化）、`.xlsx`（**手写 zip+XML 解析，本机没有 openpyxl 也能读**，兼容 sharedStrings 与 inlineStr）
+   - **OfferAgent Plan/Reflect 节点** `offer_agent_plan.py`：`make_plan()` 先出 3-6 步计划并**校验工具名**（模型编造的非法工具会被单独标出）；`reflect()` 任务收尾自评 goal_met/evidence/gaps/next_action，**解析失败保守兜底不假装成功**
+   - **OfferAgent MCP 工具层** `offer_agent_mcp.py`：手写 MCP（stdio + JSON-RPC 2.0）暴露 10 个工具，`initialize / tools/list / tools/call` 全部可用，执行类工具 `open_application` 带 `humanConfirm` 标注。踩坑：**Windows 控制台默认 GBK，MCP 必须强制 UTF-8**（否则客户端按 utf-8 解码直接报错）
+   - **OfferAgent 记忆 embedding 化** `offeragent/memory_vec.py`：长期记忆三档自动降级（bge 向量 → TF-IDF → 词面重合），`context_block()` 召回结果注入 Agent system；并接入 `run_agent`。踩坑：**加载 bge 前必须先设 HF_HUB_OFFLINE，否则联网查版本会卡死几分钟**（这次真卡了 10 分钟）
+   - **OfferAgent Docker 化** `offeragent/Dockerfile` + `docker-compose.yml`：构建上下文=仓库根、密钥走环境变量、`offeragent/data` 挂 volume；本机没装 Docker，用 `test_docker_static.py` 做静态校验（12/12）
+   - **验收**：`rag2/test_p3.py` **7/7**、`offeragent/test_agent_v3.py` **11/11**（含真起 MCP 子进程跑 JSON-RPC）、`test_docker_static.py` **12/12**
+   - **另交付**：`学习笔记/任务提示词模板.md`（从真实对话提炼的 6 个模式 + 优化点 + 任务卡模板 + 5 个高频任务提示词 + 4 条硬约束）
 
 ## 接下来计划（2026-08-15 起，v4）
 
