@@ -82,6 +82,9 @@
    - **OfferAgent 隐私合规（部分落地）**：新增 `offeragent/privacy_tools.py`（导出 zip / 一键清空 / 路径护栏 / 保留 config.json）→ 接进「设置」页「🔐 隐私与数据」区块（试运行：`test_privacy_tools.py` 6/6 通过，本地浏览器实测该区块渲染正常无报错）。还差隐私政策/用户协议正式文本
    - **输入防护与日志轮转**：RAG 服务加参数校验（问题 ≤2000 字、top_k ≤50，超限 422）；`trace.py` 加日志轮转（默认 5MB 切一份备份，防线上写满磁盘，`test_trace_rotate.py` 3/3）
    - **服务验收 16/16**：`test_service_prod.py` 新增「启动预热已完成」「超长问题 422」「top_k 越界 422」；`/ready` 在预热未完成时返回 503（warming_up），不再让第一个真实用户吃冷启动
+   - **隐私政策草案 + 数据工具踩坑**：`offeragent/docs/privacy_policy.md`（逐条对应代码真实行为，设置页可展开）；`privacy_tools.py` 发现并修掉两个真问题——① `data/edge_profile` 是 1064MB/5971 文件的浏览器登录态，导出会撑爆内存、清空会让人从 BOSS 登出 → 导出跳过（zip 3.12MB/0.58s）、清空保留；② `store.read_text` 只收 Path，传字符串会 `AttributeError`。验收 `test_privacy_tools.py` **8/8**
+   - **简历页模板卡片显中文名**：之前卡片只显示「选用「classic」」这种英文 key，用户得猜；改成标题 + 按钮都用中文短名（经典单栏 / 左侧栏 / 极简黑白 / 时间线式 / 顶部色带式 / 现代强调式 / 双栏均衡）
+   - **浏览器验收改成等渲染稳定**：`test_nav_structure.py` 原来写死 sleep(6)，Streamlit 首次编译偶发超时 → 同一项"这轮过下轮不过"的假失败；改成轮询到文本稳定（≥10s 且连续两次一致），**20/20 通过**
 
 ## 接下来计划（2026-08-15 起，v4）
 

@@ -183,6 +183,10 @@ def page_settings():
     st.caption("提示：清空会删掉简历、画像、岗位库、投递记录等全部个人数据，"
                "但保留本机配置（API Key / 主题 / 每日目标）。"
                "数据目录在 `offeragent/data/`，也可以直接在文件管理器里删。")
+    _pp_path = Path(__file__).with_name("docs") / "privacy_policy.md"
+    if _pp_path.exists():
+        with st.expander("📄 隐私政策与用户协议（草案，公开前按你的部署主体核对）"):
+            st.markdown(read_text(_pp_path, ""))   # store.read_text 收 Path，传字符串会崩
 
 
 # ============================================================

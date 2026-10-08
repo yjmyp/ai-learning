@@ -30,9 +30,18 @@ def main():
             f.write('{"job": 1}')
         s = pt.data_summary(tmp, allow_any=True)
         checks.append(("data_summary 能数出文件数与体积", s["files"] == 2 and s["bytes"] > 0))
+        # 浏览器登录态目录不该被算进"我的数据"，也不该被打包/清空
+        os.makedirs(os.path.join(tmp, "edge_profile"), exist_ok=True)
+        with open(os.path.join(tmp, "edge_profile", "big.bin"), "wb") as f:
+            f.write(b"x" * 1024)
+        s2 = pt.data_summary(tmp, allow_any=True)
+        checks.append(("data_summary 跳过浏览器登录态目录（files 仍为 2）",
+                       s2["files"] == 2 and s2["skipped_dirs"] == ["edge_profile"]))
         blob = pt.export_bytes(tmp, allow_any=True)
         names = zipfile.ZipFile(io.BytesIO(blob)).namelist()
-        checks.append(("导出的 zip 含全部文件（%d 个）" % len(names), len(names) == 2))
+        checks.append(("导出 zip = 2 个数据文件 + 1 份备份说明（共 %d 项）" % len(names),
+                       len(names) == 3 and "备份说明.txt" in names
+                       and not any(n.startswith("edge_profile") for n in names)))
         checks.append(("导出文件名带时间戳",
                        pt.export_filename().startswith("offeragent-data-")
                        and pt.export_filename().endswith(".zip")))
@@ -45,10 +54,20 @@ def main():
         checks.append(("路径护栏：拒绝清空非 data 目录", blocked))
         checks.append(("护栏拦住后文件还在（没被误删）",
                        os.path.exists(os.path.join(tmp, "profile.md"))))
-        n_files, n_dirs = pt.purge(tmp, allow_any=True)
+        n_files, n_dirs = pt.purge(tmp, allow_any=True, keep=())
         left = os.listdir(tmp)
         checks.append(("清空后目录为空（删 %d 文件 / %d 目录）" % (n_files, n_dirs),
-                       n_files == 2 and n_dirs == 1 and left == []))
+                       n_files == 3 and n_dirs == 2 and left == []))
+        # 默认 keep 要保住 config.json 与 edge_profile
+        os.makedirs(os.path.join(tmp, "edge_profile"), exist_ok=True)
+        with open(os.path.join(tmp, "config.json"), "w", encoding="utf-8") as f:
+            f.write("{}")
+        with open(os.path.join(tmp, "profile.md"), "w", encoding="utf-8") as f:
+            f.write("画像")
+        pt.purge(tmp, allow_any=True)
+        left2 = sorted(os.listdir(tmp))
+        checks.append(("默认清空保留 config.json 与浏览器登录态（剩 %s）" % left2,
+                       left2 == ["config.json", "edge_profile"]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     ok = sum(1 for _, v in checks if v)
