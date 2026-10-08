@@ -43,20 +43,22 @@ def main():
             os.environ["EDGE_PATH"] = old
         Path(fake).unlink(missing_ok=True)
 
-    # 2) 候选清单覆盖常见位置 + PATH
+    # 2) 候选清单覆盖常见位置 + PATH（Windows 严格检查本地路径；Linux/macOS 只查通用项）
+    real_platform = bf.sys.platform
     cands = bf.edge_candidates()
-    checks.append(("候选清单里有 LocalAppData 路径",
-                   any("Microsoft\\Edge\\Application".lower() in c.lower()
-                       or "Microsoft/Edge/Application".lower() in c.lower()
-                       for c in cands)))
+    if real_platform == "win32":
+        checks.append(("候选清单里有 LocalAppData 路径",
+                       any("Microsoft\\Edge\\Application".lower() in c.lower()
+                           or "Microsoft/Edge/Application".lower() in c.lower()
+                           for c in cands)))
     checks.append(("候选清单里有 Chrome 兜底",
                    any("chrome" in c.lower() for c in cands)))
+    checks.append(("候选清单非空", len(cands) > 0))
     checks.append(("错误提示里给了解决办法",
                    "EDGE_PATH" in bf.no_browser_message()
                    and "牛客" in bf.no_browser_message()))
 
     # 3) 模拟云端：Linux 平台
-    real_platform = bf.sys.platform
     try:
         bf.sys.platform = "linux"
         ok, why = bf.desktop_available()

@@ -12,6 +12,7 @@
     - 退出码: 0=全过, 1=有失败
 """
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -45,12 +46,21 @@ def is_live(p: Path) -> bool:
     return "live" in p.name.lower()
 
 def needs_service(p: Path) -> bool:
-    """依赖「本地 Streamlit 服务 + 浏览器」的验收测试（需先手动起 app）。"""
+    """依赖「本地 Streamlit 服务 + 浏览器（Edge CDP）」的验收测试（需先手动起 app）。
+
+    判定特征（任一命中即跳过，加 --browser 才跑）：
+    - 代码里调用了 bf.launch（要起 Edge）→ 本机浏览器验收
+    - 探测 localhost:85xx 端口（requests/http 访问本地服务）→ 本地服务验收
+    """
     try:
         src = p.read_text(encoding="utf-8")
     except Exception:
         return False
-    return "localhost:8501" in src and "bf.launch" in src
+    if "bf.launch" in src:
+        return True
+    if re.search(r"localhost:85\d\d", src) and ("requests" in src or "http" in src):
+        return True
+    return False
 
 def run_one(p: Path, timeout: int = 300):
     try:
