@@ -153,8 +153,9 @@ def main():
     os.makedirs(EVAL_DIR, exist_ok=True)
     lines = ["# RAG v3 检索评估报告", "",
              "> 自动生成（`rag2/eval_v3.py`）。评估集 `eval_v3.jsonl`："
-             "%d 条可回答问题（每条绑定 ground-truth 块 id）+ %d 条库外问题（测拒答）。"
-             % (n_ans, n_no),
+             "%d 条可回答问题（每条绑定 ground-truth 块 id）+ %d 条库外问题"
+             "（%d 条明显跨领域 + %d 条难负例，测拒答）。"
+             % (n_ans, n_no + len(hard), n_no, len(hard)),
              "> 索引：%d 块 / %d 篇资料。命中判据 = 期望块出现在 top-k（不靠关键词猜）。"
              % (engine.store.count(), len(set(it["source"] for it in items if it["source"]))),
              "",
