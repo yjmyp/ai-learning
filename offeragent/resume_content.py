@@ -21,7 +21,8 @@ DEFAULT_CONTENT = {
         "到岗 2026.09 下旬起 · 4–5 天/周 · 可连续实习 6 个月以上（毕业可无缝转正）",
     ],
     "links": [
-        ("上线项目", "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"),
+        ("OfferAgent", "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/"),
+        ("RAG 知识库", "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"),
         ("GitHub", "https://github.com/yjmyp/ai-learning"),
     ],
     "projects": [
@@ -30,7 +31,8 @@ DEFAULT_CONTENT = {
             "date": "2026.09 至今",
             "result": "自研 8 工具 Agent 引擎并自用：匹配分改成<b>五维本地加权</b>后同一岗位重复打分"
                       "<b>方差 0.00</b>（模型法平均波动 3.31 分）；工具守卫 6/6 拦截全部坏调用；"
-                      "硬门槛自动拦下「硕士线 / 届别不符 / 方向偏算法」，22 个真实岗位全链路跑通",
+                      "硬门槛自动拦下「硕士线 / 届别不符 / 方向偏算法」，22 个真实岗位全链路跑通；"
+                      "跨岗位泛化实测蚂蚁 78 / 小米 72 / Calix 88 分",
             "tech": "Python ｜ DeepSeek API ｜ Streamlit ｜ SQLite ｜ ReAct / Function Calling / 多 Agent 协作",
             "bullets": [
                 "<b>自研 Agent 引擎（非框架封装）</b>：8 工具统一 Schema 注册表 + ReAct 循环 + "
@@ -46,10 +48,15 @@ DEFAULT_CONTENT = {
                 "不该投的（硕士线 / 届别不符 / 方向偏算法）。",
                 "<b>记忆语义化 + 可观测</b>：事实与复盘写入<b>向量记忆</b>（bge 语义召回，支持模糊指代）；"
                 "trace 落盘 JSONL + <b>可视化页</b>（工具调用分布 / 覆盖率 / 运行时间线）+ 成本计量。",
+                "<b>数字分身（可面试演示）</b>：15 题自我蒸馏生成结构化画像 → 渲染为可交互分身页；"
+                "HR / 考官在知情前提下点进链接，分身基于画像实时回答并展示项目证据。",
+                "<b>投递流程状态机化</b>：LangGraph StateGraph 把「链接核验 → 门禁 → 话术 → 投递 → "
+                "记录回写」建成显式状态机，节点可单独复用与测试；投递前自动核验 URL 拦截失效链接。",
                 "<b>产品闭环</b>：自我蒸馏（15 题生成结构化画像）→ 岗位匹配 → 话术生成 → "
                 "半自动投递 → 面试拷问 → 复盘写回画像，全流程自研自用。",
                 "<b>工程化</b>：11 页面应用，数据 / AI / UI 三层拆分可独立测试；"
-                "run_tests.py 统一测试入口 26 个测试 0 失败基线；密钥走 Secrets 不落代码。",
+                "run_tests.py 统一测试入口 26 个测试 0 失败基线；GitHub Actions CI 三档全绿；"
+                "简历 HTML / PDF / Markdown 三格式下载；密钥走 Secrets 不落代码。",
             ],
         },
         {
