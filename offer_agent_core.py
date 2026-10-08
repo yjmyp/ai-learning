@@ -187,6 +187,16 @@ def run_agent(task: str, registry: dict, state: AgentState = None,
     state.memory.extract_facts(task)
     if not state.messages:
         sys_txt = system_text or build_system(registry, state.memory)
+        # v3：长期记忆的语义召回（memory_vec 可用时注入；不可用就当没有）
+        try:
+            import memory_vec
+            block = memory_vec.context_block(task)
+            if block:
+                sys_txt += "\n\n" + block
+                state.trace.append({"step": "memory_recall",
+                                    "tool": "memory_vec", "args": {"q": task[:60]}})
+        except Exception:
+            pass
         state.messages = [
             {"role": "system", "content": sys_txt},
             {"role": "user", "content": task},

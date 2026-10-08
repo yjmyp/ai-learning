@@ -32,14 +32,23 @@ def build_prompt(question, hits):
     return "\n\n".join(lines)
 
 
-def citations(hits):
-    """结构化引用：编号 / 来源 / 片段 / 相关性分，前端可点开原文。"""
+def citations(question, hits):
+    """结构化引用：编号 / 来源 / **句级引文 + 偏移** / 相关性分。
+
+    句级引文靠 locate.py 从命中的块里再挑一句——用户点开引用要核对的是具体依据，
+    给一整块（200-300 字）等于让他自己找。
+    """
+    from locate import locate
     out = []
     for i, h in enumerate(hits, start=1):
+        loc = locate(question, h.get("text") or "")
         out.append({
             "index": i,
             "source": h.get("source", ""),
             "snippet": (h.get("text") or "")[:200],
+            "quote": loc["quote"],
+            "offset": loc["offset"],
+            "locate_score": loc["score"],
             "score": h.get("rerank_score") or h.get("rrf_score") or 0,
             "chunk_id": h.get("id", ""),
         })
@@ -95,7 +104,7 @@ def answer(question, retriever, api_key, mode="hybrid_rerank", top_k=5,
     base = {
         "question": question, "mode": mode, "queries": res.get("queries"),
         "candidates": res.get("candidates"),
-        "citations": citations(hits), "selfcheck": checked,
+        "citations": citations(question, hits), "selfcheck": checked,
         "retrieval_ms": res.get("latency_ms"),
     }
     if refuse:

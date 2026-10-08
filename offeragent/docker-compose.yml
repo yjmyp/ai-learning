@@ -1,0 +1,16 @@
+# 一键起 OfferAgent：docker compose -f offeragent/docker-compose.yml up --build
+# 数据持久化：岗位库 / 投递记录 / 记忆都在 offeragent/data，挂 volume 后容器重建不丢
+services:
+  offeragent:
+    build:
+      context: ..
+      dockerfile: offeragent/Dockerfile
+    image: offeragent:latest
+    ports:
+      - "8501:8501"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+    volumes:
+      - ./data:/app/offeragent/data
+    restart: unless-stopped
