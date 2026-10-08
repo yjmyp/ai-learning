@@ -7,7 +7,8 @@
 检查项：
   1. 已跟踪文件里没有真实 key 形态
   2. 敏感文件没被 git 跟踪（secrets.toml / local_key.py / .env）
-  3. 求职隐私数据 offeragent/data/ 未入库
+  3. 求职隐私数据 offeragent/data/ 未入库（占位符 .gitkeep 除外——用于保证 Docker
+     volume 源目录在 CI checkout 后存在）
   4. .gitignore 覆盖上述敏感路径
 
 跑法：python test_repo_hygiene.py
@@ -82,7 +83,8 @@ def main():
     checks.append(("敏感文件未被跟踪（%s）" % (", ".join(bad) if bad else "无"),
                    len(bad) == 0))
 
-    data_tracked = [t for t in files if t.startswith("offeragent/data/")]
+    data_tracked = [t for t in files if t.startswith("offeragent/data/")
+                    and t != "offeragent/data/.gitkeep"]
     checks.append(("求职隐私数据未入库（%d 个文件）" % len(data_tracked),
                    len(data_tracked) == 0))
 
