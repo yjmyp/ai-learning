@@ -67,6 +67,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: 装校验依赖（PyYAML 供 Docker 配置静态校验）
+        run: pip install PyYAML
       - name: Docker 真构建验收（rag2 + OfferAgent）
         env:
           RUN_DOCKER_BUILD: "1"
