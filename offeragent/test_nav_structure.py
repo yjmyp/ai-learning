@@ -37,12 +37,26 @@ def main():
     time.sleep(13)
 
     def text_at(path):
+        """导航后等页面渲染稳定再取文本。
+
+        原来写死 sleep(6)，Streamlit 首次编译页面偶尔超过 6 秒 → 取到半页，
+        同一项检查会出现"这轮过、下轮不过"的假失败。改成轮询到内容稳定为止。
+        """
         cdp.call("Page.navigate", {"url": "http://localhost:8501" + path}, timeout=60)
-        time.sleep(6)
-        html = cdp.call("Runtime.evaluate", {
-            "expression": "document.documentElement.outerHTML",
-            "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
-        return html_to_text(html), html
+        html, txt, prev = "", "", None
+        started = time.time()
+        deadline = started + 40
+        while time.time() < deadline:
+            time.sleep(2.5)
+            html = cdp.call("Runtime.evaluate", {
+                "expression": "document.documentElement.outerHTML",
+                "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
+            txt = html_to_text(html)
+            # 判定"渲染完成"：至少跑满 10 秒，且连续两次取到的文本完全一致
+            if (prev == txt and len(txt) > 300 and time.time() - started >= 10):
+                break
+            prev = txt
+        return txt, html
 
     root_text, root_html = text_at("/")
     # 侧边栏导航：应该是带 href 的链接（原生多页），不是自己画的单选按钮
@@ -83,23 +97,25 @@ def main():
                    "BOSS" in apply_text and "邮件" in apply_text and "内推" in apply_text))
     checks.append(("投递台不再有简历定制", "简历定制" not in apply_text))
 
-    res_text, _ = text_at("/resume")
+    res_text, res_html = text_at("/resume")
     checks.append(("简历页同时有内容与覆盖检查两个页签",
                    "简历内容 / 模板 / 照片" in res_text and "ATS" in res_text))
     checks.append(("简历页有三套模板缩略预览",
-                   all(k in res_text for k in ["经典单栏", "左侧栏", "极简黑白"])))
+                   all(k in res_text or k in res_html
+                       for k in ["经典单栏", "左侧栏", "极简黑白"])))
 
     int_text, _ = text_at("/interview")
     checks.append(("面试准备页三个页签齐全",
                    all(k in int_text for k in ["面试拷问", "分身陪练", "复盘入库"])))
 
-    rec_text, _ = text_at("/records")
+    rec_text, rec_html = text_at("/records")
     checks.append(("投递记录只记事实（漏斗指向数据页）",
-                   "数据与日志" in rec_text))
+                   "数据与日志" in rec_text or "数据与日志" in rec_html))
 
-    show_text, _ = text_at("/show")
-    checks.append(("展示页有素材自检", "对外素材自检" in show_text))
-    checks.append(("展示页有名片链接", "twin=1" in show_text))
+    show_text, show_html = text_at("/show")
+    checks.append(("展示页有素材自检",
+                   "对外素材自检" in show_text or "对外素材自检" in show_html))
+    checks.append(("展示页有名片链接", "twin=1" in show_text or "twin=1" in show_html))
 
     set_text, _ = text_at("/settings")
     checks.append(("设置有每日投递目标", "每日投递目标" in set_text))

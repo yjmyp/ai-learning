@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import config
 import trace as trace_mod
@@ -86,6 +86,10 @@ async def _lifespan(app):
 
 
 _warmup_result = {}
+
+if not os.environ.get("SERVICE_API_KEY", ""):
+    print("[warn] 未设置 SERVICE_API_KEY：/ask、/search、/reindex、/stats 将不鉴权。"
+          "公网部署必须设置。", flush=True)
 
 app = FastAPI(title="RAG v3 检索服务", version="3.0", lifespan=_lifespan)
 
@@ -187,15 +191,16 @@ def _check_key(api_key):
 
 
 class SearchReq(BaseModel):
-    q: str
+    # 输入校验 = 最便宜的防滥用手段：不限制的话一个 1MB 的问题就能把 embedding 拖死
+    q: str = Field(min_length=1, max_length=2000)
     mode: str = "hybrid_rerank"
-    top_k: int = 5
+    top_k: int = Field(default=5, ge=1, le=50)
 
 
 class AskReq(BaseModel):
-    q: str
+    q: str = Field(min_length=1, max_length=2000)
     mode: str = "hybrid_rerank"
-    top_k: int = 5
+    top_k: int = Field(default=5, ge=1, le=50)
     stream: bool = False
     selfcheck: bool = True
 
@@ -222,12 +227,19 @@ def live():
 
 @app.get("/ready")
 def ready():
-    """就绪探针：索引为空说明还在建库，此时返回 503 让网关先别转流量过来。"""
+    """就绪探针：索引为空、或还在预热（SERVICE_WARMUP=1）时返回 503，让网关先别转流量过来。
+
+    为什么要等预热：实测首检索要 28 秒（加载向量模型 + 建 BM25 索引）。
+    "进程活着"不代表"能快速服务"，就绪语义应该是后者；不然第一个真实用户吃满冷启动。
+    """
     eng, _ = engine()
     n = eng.store.count()
-    body = {"status": "ready" if n else "indexing", "version": SERVICE_VERSION,
-            "index_chunks": n, "modes": ALL_MODES}
-    if not n:
+    warming_cfg = os.environ.get("SERVICE_WARMUP", "0") in ("1", "true", "yes")
+    still_warming = warming_cfg and not _warmup_result        # 预热线程还没回来
+    body = {"status": "warming_up" if still_warming else ("ready" if n else "indexing"),
+            "version": SERVICE_VERSION, "index_chunks": n, "modes": ALL_MODES,
+            "warmup": _warmup_result}
+    if not n or still_warming:
         return JSONResponse(status_code=503, content=body)
     return body
 

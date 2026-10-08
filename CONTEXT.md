@@ -79,6 +79,9 @@
    - **CI + Docker 真构建**：`.github/workflows/ci.yml` 三档（离线单测 / 真建索引+服务验收 / Docker 真构建）；`test_docker_build.py`（没 Docker 自动降级静态校验，`RUN_DOCKER_BUILD=1` 才真构建）
    - **仓库卫生门禁** `test_repo_hygiene.py` 5/5：已跟踪文件无真 key、secrets/data 未入库、.gitignore 覆盖（把早期"key 随 push 泄露"的教训固化成测试）
    - **商业化评估** `offeragent/docs/production_readiness.md`：判定标准 + 逐项证据 + 剩余缺口。结论：技术侧到生产级；产品侧仍是"单人工具"（缺多用户数据隔离 2-3 天、隐私合规 1 天）；商业化程度约 30%
+   - **OfferAgent 隐私合规（部分落地）**：新增 `offeragent/privacy_tools.py`（导出 zip / 一键清空 / 路径护栏 / 保留 config.json）→ 接进「设置」页「🔐 隐私与数据」区块（试运行：`test_privacy_tools.py` 6/6 通过，本地浏览器实测该区块渲染正常无报错）。还差隐私政策/用户协议正式文本
+   - **输入防护与日志轮转**：RAG 服务加参数校验（问题 ≤2000 字、top_k ≤50，超限 422）；`trace.py` 加日志轮转（默认 5MB 切一份备份，防线上写满磁盘，`test_trace_rotate.py` 3/3）
+   - **服务验收 16/16**：`test_service_prod.py` 新增「启动预热已完成」「超长问题 422」「top_k 越界 422」；`/ready` 在预热未完成时返回 503（warming_up），不再让第一个真实用户吃冷启动
 
 ## 接下来计划（2026-08-15 起，v4）
 

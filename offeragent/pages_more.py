@@ -28,6 +28,7 @@ import v41
 import company_lookup
 import job_detail
 import doc_io
+import privacy_tools
 import resume_builder
 import resume_clean
 import resume_templates
@@ -141,6 +142,47 @@ def page_settings():
             cfg.pop("app_password_hash", None)
             write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
             st.success("已清除访问密码。")
+
+    # ---------------- 隐私与数据（上线给陌生人用之前的合规要求） ----------------
+    st.markdown("---")
+    st.markdown("##### 🔐 隐私与数据（你的数据在哪、怎么带走、怎么删）")
+    st.caption("你在本应用里输入的一切（简历、画像、岗位库、投递记录、复盘）都只存在**运行这个应用的机器**上的 "
+               "`offeragent/data/` 目录，不会上传到开发者服务器；只有调用模型时，相关文本会发给 DeepSeek API。"
+               "不想用了就一键带走或一键清空。")
+    try:
+        _sum = privacy_tools.data_summary()
+        st.caption(f"当前数据：**{_sum['files']} 个文件 / {_sum['mb']} MB**　"
+                   f"（{_sum['dir']}）")
+    except Exception as _e:
+        st.caption(f"数据目录读取失败：{_e}")
+
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        if st.button("📦 打包我的全部数据", key="priv_export"):
+            try:
+                st.session_state["_priv_blob"] = privacy_tools.export_bytes()
+            except Exception as _e:
+                st.error(f"导出失败：{_e}")
+        if st.session_state.get("_priv_blob"):
+            st.download_button("⬇️ 下载 zip 备份", st.session_state["_priv_blob"],
+                               file_name=privacy_tools.export_filename(),
+                               mime="application/zip", key="priv_dl")
+    with _c2:
+        _confirm = st.text_input('要清空全部数据，请先输入「删除」两个字',
+                                 key="priv_confirm")
+        if st.button("🗑️ 删除我的全部数据", key="priv_del"):
+            if _confirm.strip() == "删除":
+                try:
+                    _nf, _nd = privacy_tools.purge()
+                    st.session_state.pop("_priv_blob", None)
+                    st.success(f"已清空：删除 {_nf} 个文件 / {_nd} 个子目录。刷新页面即从空数据开始。")
+                except Exception as _e:
+                    st.error(f"清空失败：{_e}")
+            else:
+                st.warning("没执行：确认框里要输入「删除」两个字。")
+    st.caption("提示：清空会删掉简历、画像、岗位库、投递记录等全部个人数据，"
+               "但保留本机配置（API Key / 主题 / 每日目标）。"
+               "数据目录在 `offeragent/data/`，也可以直接在文件管理器里删。")
 
 
 # ============================================================

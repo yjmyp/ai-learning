@@ -14,6 +14,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 TRACE_DIR = os.path.join(HERE, "data")
 TRACE_PATH = os.path.join(TRACE_DIR, "trace.jsonl")
+TRACE_MAX_BYTES = int(os.environ.get("TRACE_MAX_BYTES", str(5 * 1024 * 1024)))
 _lock = threading.Lock()
 
 # DeepSeek 价格（元/百万 token，官方价目取整，仅用于成本估算不用于计费）
@@ -25,6 +26,24 @@ def _ensure():
     os.makedirs(TRACE_DIR, exist_ok=True)
 
 
+def _rotate_if_needed():
+    """日志轮转：trace 只留最近一份备份，避免线上无限长下去把磁盘写满。
+
+    为什么必须有：JSONL 每问一次就追加一行，长期跑下去是典型的"悄悄吃满磁盘"的坑。
+    """
+    try:
+        if TRACE_MAX_BYTES <= 0 or not os.path.exists(TRACE_PATH):
+            return
+        if os.path.getsize(TRACE_PATH) < TRACE_MAX_BYTES:
+            return
+        backup = TRACE_PATH + ".1"
+        if os.path.exists(backup):
+            os.remove(backup)
+        os.replace(TRACE_PATH, backup)
+    except Exception:
+        pass          # 轮转失败不能影响写日志
+
+
 def log(event, **fields):
     """追加一条 trace。任何异常都不能影响主流程。"""
     try:
@@ -32,6 +51,7 @@ def log(event, **fields):
         rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "event": event}
         rec.update(fields)
         with _lock:
+            _rotate_if_needed()
             with open(TRACE_PATH, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:

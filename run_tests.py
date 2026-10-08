@@ -16,6 +16,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:                       # Windows 控制台默认 GBK，子测试输出里有 ✅ 会直接崩在 print
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent
 OFFERAGENT = ROOT / "offeragent"
 RAG2 = ROOT / "rag2"

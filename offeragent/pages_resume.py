@@ -197,15 +197,21 @@ def page_my_resume():
 
     # ---- 模板卡片墙：4 列排开，卡片 = 版式缩略 + 描述 + 选用按钮 ----
     st.markdown("###### 选一套模板（点卡片下的「选用」）")
+    # 卡片标题用中文短名：之前只显示 "选用「classic」" 这种英文 key，
+    # 用户得靠猜哪套是哪套（缩略图里的小字看不见）。
+    def _short_name(k):
+        return resume_templates.TEMPLATES.get(k, k).split("（")[0].strip()
+
     for row in range(0, len(tpl_keys), 4):
         cols = st.columns(4)
         for _k, col in zip(tpl_keys[row:row + 4], cols):
             with col:
+                st.markdown(f"**{_short_name(_k)}**")
                 st.html(resume_templates.preview_html(
                     _k, photo_uri=_pv_photo, zoom=0.20, instance=f"card_{_k}"))
                 _active = (_k == tpl_key)
                 if st.button(
-                        f"选用「{_k}」",
+                        f"选用「{_short_name(_k)}」",
                         key=f"tpl_card_{_k}",
                         type="primary" if _active else "secondary",
                         use_container_width=True):
@@ -215,7 +221,7 @@ def page_my_resume():
 
     # ---- 选中的那套：放大看整页 ----
     st.markdown("---")
-    st.markdown(f"###### 放大看「**{tpl_key}**」整页（跟我打印出来的一致）")
+    st.markdown(f"###### 放大看「**{_short_name(tpl_key)}**」整页（跟我打印出来的一致）")
     st.html(resume_templates.preview_html(tpl_key, photo_uri=_pv_photo,
                                           zoom=0.78, instance="zoom"))
 
