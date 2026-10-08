@@ -1,0 +1,54 @@
+{"id": "a01", "q": "不卡学历的普工到底怎么找？外企是不是真的不走招聘平台？", "chunk_id": "1597617c6ad4306e6ed0dfa57470850f", "source": "..\\学习笔记\\抖音链接读取结果-全量20260815.md", "head": "不卡学历的普工怎么找 | | D3 | 到底怎么找外企最省事 / 步步糕 | 5", "kw": "外企独资", "kind": "answerable"}
+{"id": "a02", "q": "网上说的冷冻期六个月、彻底放弃大厂，这种说法靠谱吗？", "chunk_id": "57f82adcacb6b1be8e48d24713c113e8", "source": "..\\学习笔记\\外部方案评估.md", "head": "用数据复盘代替预设失败 4. **\"冷冻期 6 个月，彻底放弃华为/字节/腾讯\"", "kw": "冷冻期", "kind": "answerable"}
+{"id": "a03", "q": "面试时怎么用 30 秒讲清自己用过的几种 Agent 模式？", "chunk_id": "1328fe9705d3f20b67c2a84225b2ddd7", "source": "..\\学习笔记\\Agent模式-Reflection与PlanExecute.md", "head": "## 五、面试串讲（三种模式 30 秒） \"我自研了 ReAct 循环（边想边干", "kw": "ReAct 循环", "kind": "answerable"}
+{"id": "a04", "q": "从某天开始学 AI agent，多久能独立接项目？", "chunk_id": "82e5d1feff606676a317c722f3245017", "source": "..\\学习笔记\\抖音链接读取结果-20260815.md", "head": " / 1 转 - 口播要点：标题即文案（58 秒短视频，无附加长文案）。 - 评", "kw": "AI agent", "kind": "answerable"}
+{"id": "a05", "q": "网上那些学习路线，技术主线的顺序大概是什么？", "chunk_id": "ada1a3218293859789df1ee42449a0d6", "source": "..\\学习笔记\\外部学习路径汇总.md", "head": "# 外部学习路径汇总（喂给过我的所有网上路线） > 用途：一次看清\"网上喂过的学", "kw": "RAG", "kind": "answerable"}
+{"id": "a06", "q": "以腾讯 JD 为标准，Agent 项目选题该按什么原则来？", "chunk_id": "fc37b9c06274e88f187f572a2d19d4e3", "source": "..\\学习笔记\\Agent项目选题分析.md", "head": "# Agent 项目选题分析（2026-08-15 深夜 · 你的 50+ 条想", "kw": "腾讯 JD", "kind": "answerable"}
+{"id": "a07", "q": "怎么判断自己的求职进度是不是达标，而不是靠感觉？", "chunk_id": "64bb0579e5415bdb559953ceec702b90", "source": "..\\学习笔记\\我的目标体系.md", "head": "## 五、目标校验（证据制，不靠感觉） - 投递数、面试数、offer 数（每周", "kw": "目标校验", "kind": "answerable"}
+{"id": "a08", "q": "AI大模型应用开发实习岗一般要求会哪些技术？", "chunk_id": "b2a57d8beeffae7be454210434118e6a", "source": "..\\学习笔记\\JD调研-南京AI应用开发实习.md", "head": "| # | 岗位 | 公司 | 性质 | 关键要求（原文摘录） | |---|-", "kw": "RAG", "kind": "answerable"}
+{"id": "a09", "q": "为什么没法直接还原那三个抖音链接里提到的skill？", "chunk_id": "33d91bbf631e0f4ce1c4e72d11f2f28f", "source": "..\\学习笔记\\Codex-Skills安装包.md", "head": "# Codex Skills 安装包（2026-08-17） ## 0. 先说清", "kw": "抖音反爬", "kind": "answerable"}
+{"id": "a10", "q": "余剑简历v2里技能栏为什么不写LangChain？", "chunk_id": "73244faac14e1be84261c3a80698d21a", "source": "..\\学习笔记\\简历包装指南.md", "head": "## 二、应用到余剑简历（v2，全部真实） - 求职意向加括号：AI 应用开发实", "kw": "LangChain", "kind": "answerable"}
+{"id": "a11", "q": "选实习时，实习时长这块有什么优先和否决标准？", "chunk_id": "5707bf677a810f1722d0e7de000b5dd1", "source": "..\\学习笔记\\实习选择评估.md", "head": "1. **实习时长**：优先\"3-4 个月、每周 4-5 天\"；强制 6 个月的", "kw": "一票否决", "kind": "answerable"}
+{"id": "a12", "q": "Agent岗面试里，原理部分要能讲到什么程度？", "chunk_id": "20c4f00a8e7d691a006b724e6c5c46b2", "source": "..\\学习笔记\\求职战术与AI变现分析.md", "head": "你的\"上岸强度\"定义 = **RAG 项目 + Agent 项目 + 评估体系*", "kw": "ReAct", "kind": "answerable"}
+{"id": "a13", "q": "模型是真的理解世界，还是只是学会了文字里的统计规律？", "chunk_id": "5ef8fabf8218275806ebeff05696d06e", "source": "..\\rag\\notes\\大模型入门.txt", "head": "个地生成。它并不\"理解\"世界，而是学会了海量文字中的统计规律。训练数据越多、参数", "kw": "统计规律", "kind": "answerable"}
+{"id": "a14", "q": "有没有适合把求职流程做成工作台的开源项目？", "chunk_id": "be7f8a33a3aa5275f7c43211fc41bb3d", "source": "..\\学习笔记\\我的Agent想法库.md", "head": "熟练度是简历硬项 - F6 Reddit\"深度思考\"Prompt（全文在 `抖音", "kw": "ai-job-search", "kind": "answerable"}
+{"id": "a15", "q": "讲代码的时候怎么用对照式把概念和项目代码对应起来？", "chunk_id": "3a703de53851dd73e8feca9285ac05ba", "source": "..\\学习笔记\\交接文档-20260919.md", "head": "1. **对照式**：左边讲概念（为什么），右边指他项目里的具体代码（哪一行），", "kw": "对照式", "kind": "answerable"}
+{"id": "a16", "q": "项目经历不够的话，简历上应该怎么补？", "chunk_id": "2de2011b7a90e48e0fc90f93b4541ca8", "source": "..\\学习笔记\\求职战术与AI变现分析.md", "head": "江浙沪外企池可再挖（日企月薪过万、低内卷外企、二本友好外企） - **优先投\"免", "kw": "项目深度", "kind": "answerable"}
+{"id": "a17", "q": "支付回调怎么防止重复入账和重复开通权益？", "chunk_id": "9b4de4308d9a1bef41cd374a522ae2e8", "source": "..\\学习笔记\\罗宇豪简历.pdf", "head": "配 合统一会话模型，支撑双端历史消息快速拉取。 5.参与六渠道 Webhook ", "kw": "订单状态机", "kind": "answerable"}
+{"id": "a18", "q": "华为南研所27届秋招的薪资和笔试难度怎么样？", "chunk_id": "17e565d438b29fc4518baef350c02982", "source": "..\\学习笔记\\实习选择评估.md", "head": "缺不缺钱 | | 华为南研所（27届秋招） | ★★★★★ 18-35K·16薪", "kw": "华为南研所", "kind": "answerable"}
+{"id": "a19", "q": "大厂的冷冻期一般多久，是不是被拉黑就彻底没机会了？", "chunk_id": "3329f89b21304e82f843ff942ec405db", "source": "..\\学习笔记\\最终裁决与证据链.md", "head": "### 2. 冷冻期：大厂真实存在且因公司而异，\"彻底拉黑\"是错误结论 —— 置", "kw": "冷冻期", "kind": "answerable"}
+{"id": "a20", "q": "Reflection 和 ReAct 到底有什么区别？", "chunk_id": "9e176a96f0817c64f77a2b037f9b837b", "source": "..\\学习笔记\\Agent模式-Reflection与PlanExecute.md", "head": "（事实错误？漏了什么？逻辑不通？） ③ 修正：按自评结果重写 v2 → 再自评 ", "kw": "Reflection", "kind": "answerable"}
+{"id": "a21", "q": "我自己写的多 Agent 方案和 AutoGen、CrewAI 这些框架比，差别在哪？", "chunk_id": "d7503ce6b551b647722d95eed86c182d", "source": "..\\学习笔记\\Agent框架对比笔记.md", "head": "CrewAI = 角色团队 | | 多 Agent | supervisor +", "kw": "多 Agent", "kind": "answerable"}
+{"id": "a22", "q": "智影内容平台用了哪些技术栈？", "chunk_id": "74f54b6cf975c63634ea4dfbebb2c134", "source": "..\\学习笔记\\罗宇豪简历.pdf", "head": " 智影内容平台 项目介绍 技术栈：SpringBoot、Mysql、Redis、", "kw": "智影内容平台", "kind": "answerable"}
+{"id": "a23", "q": "我给自己定的学习守则都有哪几条？", "chunk_id": "3cbe1e93c30025604e4e5a67b5f9e80f", "source": "..\\学习笔记\\交接文档-20260919.md", "head": "## 4. 已经立下的规则（请遵守） **学习守则五条**（`学习笔记\\学习守则", "kw": "学习守则五条", "kind": "answerable"}
+{"id": "a24", "q": "第二梯队里有哪些是实习之后要做的任务？", "chunk_id": "e8b949d1cc43598918c62a5ea08fd0aa", "source": "..\\学习笔记\\我的Agent想法库.md", "head": "## 第二梯队（实习后做） - [ ] 调研市面上 agent/skill 的 ", "kw": "第二梯队", "kind": "answerable"}
+{"id": "a25", "q": "MCP 是什么？它和我的工具注册表有什么关系？", "chunk_id": "3880db63829c39572d74d49f0ff1aa19", "source": "..\\学习笔记\\Agent模式-Reflection与PlanExecute.md", "head": "| 词 | 一句话 | 和你的关系 | |---|---|---| | **MC", "kw": "MCP", "kind": "answerable"}
+{"id": "a26", "q": "萌想科技在南京的 AI 岗有哪些候选？JD 关键词是什么？", "chunk_id": "27957ec003623f06072d2b708455a433", "source": "..\\学习笔记\\8月18日投递执行清单.md", "head": "### 2. 萌想科技（南京，实习僧渠道，投前 1 分钟确认） - 渠道：实习僧", "kw": "萌想科技", "kind": "answerable"}
+{"id": "a27", "q": "8/18 首投的优先级顺序是怎样的？避雷名单有哪些？", "chunk_id": "8629e6a3d226dc9fdbb3925ae459bc40", "source": "..\\学习笔记\\实习选择评估.md", "head": "## 三、结论（按 8/18 首投优先级） 1. **Calix 凯易讯**（首", "kw": "Calix 凯易讯", "kind": "answerable"}
+{"id": "a28", "q": "网眼信息技术现在还在招 Python/LLM 岗吗？", "chunk_id": "3c1abe7ba0b04ea2171e9c9d8ddd2b83", "source": "..\\学习笔记\\投递记录表.md", "head": "邮件已备好 | | ~~网眼信息技术~~（已撤） | ~~AI应用实习生~~ |", "kw": "网眼信息技术", "kind": "answerable"}
+{"id": "a29", "q": "字节跳动和腾讯的 AI 应用岗分别是什么性质、有什么要求？", "chunk_id": "9dfc358cb626d498611880e4a950eb4c", "source": "..\\学习笔记\\JD调研-南京AI应用开发实习.md", "head": "| # | 岗位 | 公司 | 性质 | 关键要求（原文摘录） | |---|-", "kw": "字节跳动", "kind": "answerable"}
+{"id": "a30", "q": "异步转码是怎么解决上传阻塞和格式兼容问题的？效果如何？", "chunk_id": "274759e648bd7fa886d60bb5bddbf5ec", "source": "..\\学习笔记\\罗宇豪简历.pdf", "head": " 5.异步转码： 针对转码阻塞上传线程、格式兼容差，通过 RabbitMQ 解耦", "kw": "RabbitMQ", "kind": "answerable"}
+{"id": "a31", "q": "GoalfyAI 这个岗位投递时收件人和抄送分别填什么邮箱？", "chunk_id": "6ea5f9456dfb6d4db1efb5f76eaa09c2", "source": "..\\学习笔记\\8月18日投递执行清单.md", "head": "### 3. GoalfyAI 有向元智（远程/北京，邮件捡漏） - 渠道：邮箱", "kw": "lishiyun@addnewer.com", "kind": "answerable"}
+{"id": "a32", "q": "这个工具为什么能全覆盖 JD 的四大机制？", "chunk_id": "85ecf82733bc328d6e5553c6c80e2a0f", "source": "..\\学习笔记\\Agent项目选题分析.md", "head": "**为什么是它：** 1. **真实场景**：找工作选行业、创业找机会、投递前调", "kw": "Reflection", "kind": "answerable"}
+{"id": "a33", "q": "前端转行的 agent 学习路线分哪几个阶段？", "chunk_id": "c6d42863855c0ca5af497c3f1ed20351", "source": "..\\学习笔记\\抖音链接读取结果-20260818.md", "head": "WorkBuddy 实习 Agent 开发 350-450 元/天 | | 5 ", "kw": "五阶段", "kind": "answerable"}
+{"id": "a34", "q": "这个岗位要求深入理解 Agent 的哪些原理？", "chunk_id": "61e1ae38394a79c01e5202527220b673", "source": "..\\学习笔记\\腾讯Agent开发岗强度研究.md", "head": "nt 评测与质量保障体系**：效果评估、持续优化、性能与成本管控 4. 跟踪技术", "kw": "Planning", "kind": "answerable"}
+{"id": "a35", "q": "rag2 代码册建议按什么顺序阅读？", "chunk_id": "96faebe798c0825e3deeb5738a847473", "source": "..\\学习笔记\\rag2全部代码册.md", "head": "# rag2 全部代码册（2026-08-17） > 用法：按下面顺序从头读到尾", "kw": "数据流顺序", "kind": "answerable"}
+{"id": "a36", "q": "没有实习经历时简历里项目经历板块应该怎么放？", "chunk_id": "305c4c9d4aa7d7b5ec06b10fb95ba06d", "source": "..\\学习笔记\\简历包装指南.md", "head": "1. **求职意向加括号点明 AI 经验**：\"AI 应用开发实习生（具备 RA", "kw": "项目经历", "kind": "answerable"}
+{"id": "a37", "q": "RAG 里是怎么找到最相关资料的？Agent 又是什么？", "chunk_id": "c6c1c2e43195b59492179447cec6cba4", "source": "..\\rag\\notes\\大模型入门.txt", "head": "水果\"的向量距离近，\"苹果\"和\"汽车\"的距离远。RAG 里的\"找最相关资料\"就是", "kw": "向量距离", "kind": "answerable"}
+{"id": "a38", "q": "有哪些真实的 AI 应用方向可以拿来做行业调研？", "chunk_id": "a3b318424af00b9654ea70ac6b027283", "source": "..\\学习笔记\\深研-技术路径与AI未来.md", "head": "### 5. AI 应用方向清单（评论区/正文里出现的真实场景，都可作行业雷达调", "kw": "行业雷达", "kind": "answerable"}
+{"id": "a39", "q": "我的 Agent 和 Skill 想法库里，现在的主线是什么？", "chunk_id": "65cd324ff8f66ee6cbd12d4f37f91e27", "source": "..\\学习笔记\\我的Agent想法库.md", "head": "# 我的 Agent / Skill 想法库（2026-08-15 建立） > ", "kw": "行业机会调研 Agent", "kind": "answerable"}
+{"id": "a40", "q": "评论区里验证过的第一需求是什么？", "chunk_id": "41767e38afeb9e26d27eccf270a845b7", "source": "..\\学习笔记\\深研-技术路径与AI未来.md", "head": "### 1. \"岗位筛选 Agent\"是评论区验证过的第一需求（求职包直接对口）", "kw": "岗位筛选 Agent", "kind": "answerable"}
+{"id": "a41", "q": "应用岗还要不要刷算法题？刷多少够？", "chunk_id": "b9fdbddfd8f5e7dbb2fb5a7664891512", "source": "..\\学习笔记\\最终裁决与证据链.md", "head": " + 可演示 + 数字是双非的第一杠杆，与 PLAN 一致；但预期管理：第一次面", "kw": "算法刷题", "kind": "answerable"}
+{"id": "a42", "q": "BM25 检索器是怎么实现的？它和向量检索有什么区别？", "chunk_id": "5d6351c1de03bd7d89438f7d5e6b4648", "source": "..\\学习笔记\\rag2全部代码册.md", "head": "## rag2\\bm25.py — 【今日新增·示范】BM25 关键词检索（学完", "kw": "BM25", "kind": "answerable"}
+{"id": "n01", "q": "特斯拉 Model 3 的电池包容量是多少度？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n02", "q": "2026 年诺贝尔物理学奖颁给了谁？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n03", "q": "请帮我写一首关于秋天的七言绝句。", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n04", "q": "Python 的 asyncio 事件循环底层是用什么语言实现的？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n05", "q": "南京到北京的高铁二等座票价多少钱？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n06", "q": "用一句话解释量子纠缠，并给出贝尔不等式的推导。", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n07", "q": "这道菜（番茄炒蛋）的正宗做法是什么？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "n08", "q": "2027 年春节是几月几号？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer"}
+{"id": "h09", "q": "RAG 知识库问答系统里用的 bge 模型一共有多少参数？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer", "hard": true}
+{"id": "h10", "q": "Calix 这家公司 2025 年的营业收入是多少？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer", "hard": true}
+{"id": "h11", "q": "南京 AI 应用开发实习岗位的平均月薪具体是多少元？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer", "hard": true}
+{"id": "h12", "q": "OfferAgent 现在一共投出去多少家、拿到几个面试？", "chunk_id": "", "source": "", "head": "", "kw": "", "kind": "no_answer", "hard": true}

@@ -39,6 +39,13 @@
    - **验收**：新增 `offeragent/test_resume_preview.py`（量 DOM：容器高 vs 内容视觉高、页脚是否可见、照片渲染尺寸与 3:4 比例）→ 四块预览全部"容器=内容、页脚可见"，照片 44×59 / 50×66 / 40×54 / 81×109 全部正确；`run_tests.py` 统一入口从"12 通过/3 失败"修到 **15 通过 / 0 失败 / 12 跳过**（那 3 个失败其实是测试脚本把 emoji 打到 GBK 控制台崩了，已统一加 `sys.stdout.reconfigure(utf-8)`）。
    - **云端没生效的排查结论**：逐行比对后发现**云端仓库其实已经有这次修复**（远端 `preview_html` 与本地逐字节一致），本地磁盘文件也与远端一致 → 问题不在代码，在"云端没跑到新代码"。为此加了**版本指纹**：`resume_templates.build_tag()`（本文件 md5 前 8 位），「我的简历 → 简历模板」页会显示 `模板引擎版本 xxxxxxxx`，**本地和云端数字不一致 = 云端还在跑旧代码，去 Manage app → Reboot**（当前本地指纹 `1a7bf2b5`）。
    - **补上云端推送通道脚本** `tools/push_to_github.py`：从 Windows 凭据管理器读 token（`git credential fill`，不落盘不打印），走 api.github.com 按文件 PUT/DELETE 并**逐字节校验**；支持 `--dry-run`、`--files a,b`（本地 refs 落后时直接推指定文件）。用的是 `python tools/push_to_github.py --files "offeragent/resume_templates.py,offeragent/pages_more.py"`，实测 2/2 成功、字节一致。
+17. **2026-10-08 RAG v3 第一阶段：可评估的检索服务**（`rag2/`，用户要求"把项目完全做了"）：
+   - **索引升级**：语料 11 篇/254 块 → **28 篇/622 块**（`python rag2/build_eval_set.py --rebuild`）
+   - **新增模块**：`fusion.py`（RRF 融合）、`query_rewrite.py`（multi-query + HyDE）、`rerank_v3.py`（多特征重排 + 预留 cross-encoder/LLM listwise 两档）、`retriever_v3.py`（`vector`/`hybrid`/`hybrid_rerank`/`full` 四模式 + 拒答门禁）、`selfcheck.py`（答案级自检，只对事实型问题触发）、`calibrate_refusal.py`（阈值网格搜索）
+   - **评估基建**：`build_eval_set.py` 自动生成 **54 条评估集**（42 条可回答，每条绑定 ground-truth 块 id；8 条明显库外 + 4 条难负例）→ `eval_v3.py` 跑四模式消融 + 出报告（`eval/report_v3.md`、`eval/refusal_calibration.md`）
+   - **实测数字（top_k=5）**：纯向量 R@1/3/5 = 69/81/86%、MRR 0.757；**混合(RRF) 74/86/95%、MRR 0.808**；**混合+重排 74/93/98%、MRR 0.832、误拒 0%、P95 63ms**（默认档）；多查询档 R@1 有波动（74~81%）、R@5 95%、P95 1242ms（**结论：性价比低，默认不开**）
+   - **拒答从 0% → 100%**：第一版拍的阈值（rerank<0.28）实测完全失效；改为在评估集上网格搜索 → **coverage<0.13** 拦掉全部明显库外问题；再加"**答案级自检**"（只对多少/几/哪年/薪资/参数类问题触发）把 4 条难负例从 0% 拦到 **100%**，误拒仅 2%
+   - **面试文档**：`rag2/docs/rag_v3_upgrade.md`（改动清单 + 数据表 + 三条结论 + 四条已知局限 + 三句话讲法 + 追问准备）
 
 ## 接下来计划（2026-08-15 起，v4）
 
