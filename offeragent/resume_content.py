@@ -25,6 +25,12 @@ DEFAULT_CONTENT = {
         ("RAG 知识库", "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"),
         ("GitHub", "https://github.com/yjmyp/ai-learning"),
     ],
+    "summary": "以 Python 为核心的 AI Agent / AI 应用开发方向 2027 届本科生，自研并自用 "
+               "OfferAgent 求职智能体与 RAG 知识库，覆盖「Agent 引擎（ReAct / Plan / Reflect / "
+               "多 Agent / MCP）→ RAG 全链路 → 量化评估 → 上线部署」完整链路。每个功能都带可复现"
+               "的量化结果（匹配方差 0.00、RAG 命中率 86%→98%、库外拦截 100%），代码在 GitHub、"
+               "两个应用均可在线打开验证。熟练使用 Codex、Cursor、Claude Code 等 AI 编程工具进行"
+               "需求拆解、方案设计、编码调试与文档沉淀，能独立完成从原型设计到云端部署的业务落地。",
     "projects": [
         {
             "title": "OfferAgent 求职智能体（自研 + 自用，持续迭代）",
@@ -33,30 +39,27 @@ DEFAULT_CONTENT = {
                       "<b>方差 0.00</b>（模型法平均波动 3.31 分）；工具守卫 6/6 拦截全部坏调用；"
                       "硬门槛自动拦下「硕士线 / 届别不符 / 方向偏算法」，22 个真实岗位全链路跑通；"
                       "跨岗位泛化实测蚂蚁 78 / 小米 72 / Calix 88 分",
-            "tech": "Python ｜ DeepSeek API ｜ Streamlit ｜ SQLite ｜ ReAct / Function Calling / 多 Agent 协作",
+            "tech": "Python ｜ DeepSeek API ｜ Streamlit ｜ SQLite ｜ LangGraph ｜ MCP ｜ Chroma / bge 向量检索",
             "bullets": [
-                "<b>自研 Agent 引擎（非框架封装）</b>：8 工具统一 Schema 注册表 + ReAct 循环 + "
-                "预算上限防死循环；新增 <b>Plan / Reflect 两个节点</b>（先出 3-6 步计划并校验工具名"
-                "合法性；收尾自评目标是否达成，解析失败保守兜底）；五类坏输出守卫（非法 JSON / "
-                "未知工具 / 缺参 / 类型错 / 非对象）+ 错误回填自纠错。",
-                "<b>工具层两种来源：内置注册表 + MCP</b>：自研 <b>MCP server</b>（stdio + JSON-RPC 2.0，"
-                "暴露 10 个工具），任何支持 MCP 的客户端都能挂载；<b>执行类工具（投递）带 humanConfirm</b>，"
-                "发送永远停在人确认——Supervisor 模式下投递工具不在子 Agent 工具集里。",
-                "<b>匹配分结构化（可复算、可解释）</b>：把「让模型随口给分」换成<b>本地五维加权</b>"
-                "（硬技能 0.30 / 项目证据 0.25 / 地点 0.15 / 时间 0.15 / 门槛 0.15），每维给出命中与缺失"
-                "证据；<b>一致性评估：重复打分方差 0.00 vs 模型法 3.31 分</b>；22 岗位实测自动筛出 6 个"
-                "不该投的（硕士线 / 届别不符 / 方向偏算法）。",
-                "<b>记忆语义化 + 可观测</b>：事实与复盘写入<b>向量记忆</b>（bge 语义召回，支持模糊指代）；"
-                "trace 落盘 JSONL + <b>可视化页</b>（工具调用分布 / 覆盖率 / 运行时间线）+ 成本计量。",
-                "<b>数字分身（可面试演示）</b>：15 题自我蒸馏生成结构化画像 → 渲染为可交互分身页；"
-                "HR / 考官在知情前提下点进链接，分身基于画像实时回答并展示项目证据。",
-                "<b>投递流程状态机化</b>：LangGraph StateGraph 把「链接核验 → 门禁 → 话术 → 投递 → "
-                "记录回写」建成显式状态机，节点可单独复用与测试；投递前自动核验 URL 拦截失效链接。",
-                "<b>产品闭环</b>：自我蒸馏（15 题生成结构化画像）→ 岗位匹配 → 话术生成 → "
-                "半自动投递 → 面试拷问 → 复盘写回画像，全流程自研自用。",
-                "<b>工程化</b>：11 页面应用，数据 / AI / UI 三层拆分可独立测试；"
-                "run_tests.py 统一测试入口 26 个测试 0 失败基线；GitHub Actions CI 三档全绿；"
-                "简历 HTML / PDF / Markdown 三格式下载；密钥走 Secrets 不落代码。",
+                "<b>① 五维本地加权匹配管线</b>：将「让模型随口给分」替换为硬技能 0.30 / 项目证据 0.25 / "
+                "地点 0.15 / 时间 0.15 / 门槛 0.15 的本地加权评分，每维输出命中与缺失证据，解决模型打分"
+                "波动大、不可复算的问题；一致性评估：重复打分方差由 3.31 降至 <b>0.00</b>，22 个真实岗位"
+                "实测自动筛出 6 个不该投的（硕士线 / 届别不符 / 方向偏算法）。",
+                "<b>② Plan / Reflect 增强的 ReAct 引擎</b>：8 工具统一 Schema 注册表 + ReAct 循环 + "
+                "预算上限防死循环；Plan 节点先出 3-6 步计划并校验工具名合法性，Reflect 节点收尾自评目标"
+                "是否达成，解析失败保守兜底；五类坏输出守卫（非法 JSON / 未知工具 / 缺参 / 类型错 / "
+                "非对象）拦截率 6/6，错误回填后模型可自纠错重试。",
+                "<b>③ 自研 MCP server + 双来源工具层</b>：stdio + JSON-RPC 2.0 暴露 10 个工具，任何支持 "
+                "MCP 的客户端可挂载；执行类工具（投递）带 humanConfirm，发送永远停在人确认——"
+                "Supervisor 模式下投递工具不在子 Agent 工具集，解决「AI 擅自外发」的安全边界问题。",
+                "<b>④ 数字分身（可面试演示）</b>：15 题自我蒸馏生成结构化画像 → 可交互分身页，"
+                "HR / 考官知情前提下点进链接实时问答并展示项目证据，答案与画像一致可核验。",
+                "<b>⑤ 投递状态机 + 失效链接核验</b>：LangGraph StateGraph 将「链接核验 → 门禁 → 话术 → "
+                "投递 → 记录回写」建成显式状态机，节点可单独复用与测试；投递前自动重访 URL 拦截失效链接。",
+                "<b>⑥ 向量记忆 + 并发 + 工程化闭环</b>：bge 向量记忆支持模糊指代召回，三档降级保离线；"
+                "批量打分线程池 3 并发写回主线程防竞争，13 岗耗时降至约 1/3；trace 落盘 + 可视化页 + "
+                "成本计量；11 页面数据 / AI / UI 三层拆分，26 测试 0 失败，CI 三档全绿，"
+                "简历 HTML / PDF / Markdown 三格式下载，密钥走 Secrets 不落代码。",
             ],
         },
         {
@@ -67,15 +70,18 @@ DEFAULT_CONTENT = {
                       "<b>100% 拦截</b>、误拒 2%",
             "tech": "Python ｜ bge-small-zh-v1.5 ｜ Chroma ｜ FastAPI ｜ Streamlit ｜ DeepSeek API",
             "bullets": [
-                "<b>端到端链路自己实现</b>：解析（txt/md/pdf/docx/html/csv/xlsx，xlsx 手写 zip+XML "
-                "解析免依赖）→ 结构感知切分 → bge 向量化 → Chroma → <b>BM25 + 向量 RRF 融合</b> → "
-                "多特征重排 → <b>句级引用定位</b>（从命中块里挑出真正支撑答案的那句 + 字符偏移）。",
-                "<b>评估驱动优化</b>：54 条评估集消融出「混合召回解决没召回、重排解决没排前面」的分工；"
-                "<b>多查询改写实测性价比低（top-5 反降、P95 +1.2s）故不默认开</b>——取舍有数据支撑。",
-                "<b>可信层</b>：拒答阈值用评估集<b>网格搜索校准</b>（库内最低覆盖率 0.211 / 库外最高 "
-                "0.125 → 取 0.13）；数值型问题加答案级自检，难负例拒答 0%→100%、误拒 2%。",
-                "<b>工程化交付</b>：FastAPI 服务化（SSE 流式 + X-API-Key）+ 增量索引 + trace 计量"
-                "（P95 1.4s、单次成本 0.0003 元）+ Docker 一键起服务。",
+                "<b>① 混合检索 + 多特征重排管线</b>：BM25 + 向量 RRF 融合召回 → 多特征重排 → "
+                "句级引用定位（挑出真正支撑答案的句子 + 字符偏移，前端可高亮）；自建 54 条评估集做四模式"
+                "消融，量化定位「混合召回解决没召回、重排解决没排前面」的分工；top-5 命中率由 86% "
+                "提升至 <b>98%</b>（MRR 0.757 → 0.832）。",
+                "<b>② 拒答门禁 + 答案级自检</b>：拒答阈值用评估集网格搜索校准（库内最低覆盖率 0.211 / "
+                "库外最高 0.125 → 取 0.13）；数值型问题加答案级自检，「词都命中但答案不存在」的难负例"
+                "拒答率从 0% 提升至 <b>100%</b>，误拒仅 2%。",
+                "<b>③ 端到端链路自研实现</b>：解析（txt/md/pdf/docx/html/csv/xlsx，xlsx 手写 zip+XML "
+                "解析免依赖）→ 结构感知切分 → 向量化 → 检索 → 重排 → 生成，不套 LangChain 封装；"
+                "多查询改写实测性价比低（top-5 反降、P95 +1.2s）故不默认开启——取舍有数据支撑。",
+                "<b>④ 工程化交付</b>：FastAPI 服务化（SSE 流式 + X-API-Key）+ 增量索引（改一篇只重算"
+                "一篇）+ trace 计量（P95 1.4s、单次成本 0.0003 元）+ Docker 一键起服务。",
             ],
         },
         {
@@ -93,14 +99,15 @@ DEFAULT_CONTENT = {
     "education": "<b>南京邮电大学</b> ｜ 网络工程 ｜ 本科 ｜ 2027 届<br>"
                  "相关课程：计算机网络、数据结构、操作系统、数据库原理",
     "skills": [
-        ("语言 / 基础", "Python、SQL、HTTP 协议、数据结构与算法"),
-        ("Agent / 大模型应用", "ReAct / Reflection / Plan-and-Execute 设计模式、多 Agent 协作"
-                               "（Supervisor）、Function Calling 与参数合同校验、Prompt 工程、"
-                               "MCP 工具接入协议、DeepSeek API 全链路、RAG 全链路（切分 / 向量化 / "
-                               "召回 / 重排 / 生成）、Chroma、检索效果评估、LoRA 等微调方式原理"),
-        ("工程 / 部署", "FastAPI、Streamlit、SQLite、Git / GitHub、Docker 容器化、LangGraph 编排、"
-                        "LangSmith 可观测、并发 / 异步编程、Streamlit Cloud 部署 + Secrets 管理"),
-        ("工具链", "熟练使用 Codex / Cursor / Claude Code 等 AI 编程工具提效"),
+        ("AI 应用 / Agent 开发", "ReAct / Reflection / Plan-and-Execute 设计模式、多 Agent 协作"
+                               "（Supervisor）、Function Calling 与参数合同校验、MCP 工具接入协议"
+                               "（自研 stdio + JSON-RPC 2.0 MCP server）、RAG 全链路（切分 / 向量化 / "
+                               "混合召回 / 重排 / 生成）、Chroma / bge、检索效果评估、LangGraph 状态图编排、"
+                               "LoRA / QLoRA 微调原理、Transformer / Attention 原理"),
+        ("工程 / 部署", "Python（FastAPI / Streamlit）、SQL / SQLite、Docker 容器化、Git / GitHub、"
+                        "GitHub Actions CI、Streamlit Cloud 部署 + Secrets 管理、线程池 / 异步 / 并发"),
+        ("基础", "数据结构与算法（LeetCode 27 题，覆盖哈希 / 双指针 / 滑动窗口 / 链表 / 二叉树 / "
+                 "DFS / BFS / 二分 / DP / 栈 / 回溯 / 贪心 12 类）、计算机网络、操作系统、数据库原理"),
     ],
     "notes": [
         "目标：AI 应用开发 / Agent 开发实习；次选大模型应用评测方向。",

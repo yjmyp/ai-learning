@@ -63,6 +63,13 @@ def _meta_html(content) -> str:
     return "<br>".join(content["meta"])
 
 
+def _summary_html(content) -> str:
+    s = content.get("summary", "")
+    if not s:
+        return ""
+    return f'<h2>个人概述</h2><div class="summary">{s}</div>'
+
+
 def _project_html(p, show_result=True) -> str:
     bullets = "".join(f"<li>{b}</li>" for b in p["bullets"])
     res = f'<div class="result">{p["result"]}</div>' if show_result else ""
@@ -98,6 +105,7 @@ def _doc(title: str, css: str, body: str) -> str:
 def render_classic(content=None, photo_uri: str = "") -> str:
     c = content or DEFAULT_CONTENT
     projects = "".join(_project_html(p) for p in c["projects"])
+    summary = _summary_html(c)
     body = f"""<div class="page">
   <div class="head">
     <div class="head-main">
@@ -108,6 +116,7 @@ def render_classic(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
+  {summary}
   <h2>项目经历</h2>
   {projects}
   <h2>教育背景</h2>
@@ -127,6 +136,7 @@ def render_sidebar(content=None, photo_uri: str = "") -> str:
     side_meta = "".join(f"<div>{m}</div>" for m in c["meta"])
     side_skills = "".join(f"<div><b>{k}</b>{v}</div>" for k, v in c["skills"])
     side_notes = "".join(f"<li>{n}</li>" for n in c["notes"])
+    summary = _summary_html(c)
     body = f"""<div class="page">
   <div class="side">
     {_photo_box(photo_uri)}
@@ -141,6 +151,7 @@ def render_sidebar(content=None, photo_uri: str = "") -> str:
     <h1>{c["name"]}</h1>
     <div class="role">{c["role"]}</div>
     <div class="links">{_links_html(c)}</div>
+    {summary}
     <h2>项目经历</h2>
     {projects}
     <h2>教育背景</h2>
@@ -154,6 +165,7 @@ def render_sidebar(content=None, photo_uri: str = "") -> str:
 def render_compact(content=None, photo_uri: str = "") -> str:
     c = content or DEFAULT_CONTENT
     projects = "".join(_project_html(p) for p in c["projects"])
+    summary = _summary_html(c)
     body = f"""<div class="page">
   <div class="head">
     <div class="head-main">
@@ -164,6 +176,7 @@ def render_compact(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
+  {summary}
   <h2>项目经历</h2>
   {projects}
   <h2>教育背景</h2>
@@ -180,6 +193,7 @@ def render_compact(content=None, photo_uri: str = "") -> str:
 def render_timeline(content=None, photo_uri: str = "") -> str:
     """时间线式：项目沿纵向时间线排，经历占比最大。"""
     c = content or DEFAULT_CONTENT
+    summary = _summary_html(c)
     items = []
     for p in c["projects"]:
         bullets = "".join(f"<li>{b}</li>" for b in p["bullets"])
@@ -201,6 +215,7 @@ def render_timeline(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
+  {summary}
   <h2>项目经历</h2>
   <div class="tl">{"".join(items)}</div>
   <h2>教育背景</h2>
@@ -218,6 +233,7 @@ def render_band(content=None, photo_uri: str = "") -> str:
     """顶部色带式：深色横幅放姓名/联系方式，内容区卡片化。"""
     c = content or DEFAULT_CONTENT
     projects = "".join(_project_html(p) for p in c["projects"])
+    summary = _summary_html(c)
     body = f"""<div class="page">
   <div class="band">
     <div class="band-main">
@@ -229,6 +245,7 @@ def render_band(content=None, photo_uri: str = "") -> str:
     {_photo_box(photo_uri)}
   </div>
   <div class="body">
+    {summary}
     <h2>项目经历</h2>
     {projects}
     <h2>教育背景</h2>
@@ -247,6 +264,7 @@ def render_modern(content=None, photo_uri: str = "") -> str:
     """现代强调式：超大头部、技能标签云、卡片项目。"""
     c = content or DEFAULT_CONTENT
     projects = "".join(_project_html(p) for p in c["projects"])
+    summary = _summary_html(c)
     skill_tags = "".join(f'<span class="skill-tag"><b>{k}</b>{v}</span>'
                          for k, v in c["skills"])
     body = f"""<div class="page">
@@ -259,6 +277,7 @@ def render_modern(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
+  {summary}
   <h2>项目经历</h2>
   {projects}
   <h2>教育背景</h2>
@@ -279,10 +298,12 @@ def render_duo(content=None, photo_uri: str = "") -> str:
     side_meta = "".join(f"<div>{m}</div>" for m in c["meta"])
     side_skills = "".join(f"<div><b>{k}</b>{v}</div>" for k, v in c["skills"])
     side_notes = "".join(f"<li>{n}</li>" for n in c["notes"])
+    summary = _summary_html(c)
     body = f"""<div class="page">
   <div class="main">
     <h1>{c["name"]}</h1>
     <div class="role">{c["role"]}</div>
+    {summary}
     <h2>项目经历</h2>
     {projects}
     <h2>教育背景</h2>
@@ -334,6 +355,8 @@ def to_markdown(content=None) -> str:
               for m in c["meta"]]
     if c.get("links"):
         lines.append("；".join(f"{label}：{url}" for label, url in c["links"]))
+    lines += ["", "## 个人概述", ""]
+    lines += [c.get("summary", "")]
     lines += ["", "## 项目经历", ""]
     for p in c["projects"]:
         lines.append(f"### {p['title']}　{p.get('date', '')}")
