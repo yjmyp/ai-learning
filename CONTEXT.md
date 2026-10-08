@@ -92,6 +92,7 @@
    - 该补的：P0 多租户+数据隔离（两项目共用，也是商业化硬缺口）→ P1 面试评分可解释化、意图识别+路由表 → P2 联网兜底、成本/质量看板 → P3 可插拔向量库（Chroma↔Milvus 对比）
    - 明确不做：微服务全家桶/K8s/Serverless/Neo4j/Text2SQL/支付/Coze-Dify/LoRA 微调/VLLM（应用岗不问到底，现学现讲必被追问，且要几个月）
    - 完整评估与面试对标话术：`学习笔记/对标大课项目评估-小滴课堂ZM与ZD.md`
+   - **二稿修正（用户反驳后，用数据验证）**：初稿把"实习岗不深问 K8s/Neo4j"推广成"不用学 Java"是**推断过度**。抓牛客 300 条真实 JD（关键词 大模型/AI应用开发/Java大模型）统计：**Java 40%（119/300）、Spring 27%、Agent 51%、Python 34%、RAG 24%、Kafka 18%、微调 18%、MySQL/Redis 各 15%、微服务 9%**；只要 Java 系（不提 Python）107 条 vs 只要 Python 66 条 → **只投 Python 会放弃约三分之一岗位池**。深水区出现率：Neo4j/Serverless/Text2SQL/MinIO/Coze/Dify/Hadoop/ClickHouse **全 0%**、Milvus 0.3%、Kubernetes 0.3%、LoRA 0.7%、VLLM 2%。结论修正为：**Java 生态骨架（Java+SpringBoot+MySQL+Redis+MQ+Docker）是筛选条件必须补；机构清单深水区是谈资**。落地方式 = **"Java 壳 + Python 脑"**（SpringBoot 做对外 API/鉴权/CRUD+MySQL+Redis，Python 保留 RAG/Agent，HTTP+SSE 通信，Docker compose 编排），补课路线 3-4 周（每天 2-3h），**并行投递而不是停下投递去学**。
 
 ## 接下来计划（2026-08-15 起，v4）
 
