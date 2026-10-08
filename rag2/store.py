@@ -46,3 +46,12 @@ class VectorStore:
         except Exception:
             pass
         self.collection = self.client.get_or_create_collection(name=name, metadata=meta)
+
+    def delete_by_source(self, source):
+        """按来源删除（增量更新：先删旧块再加新块）。返回删除条数。"""
+        try:
+            before = self.collection.count()
+            self.collection.delete(where={"source": source})
+            return before - self.collection.count()
+        except Exception:
+            return 0

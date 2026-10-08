@@ -1,0 +1,19 @@
+# 一键起服务：docker compose up --build
+# 索引与 trace 挂到宿主机，容器重建不丢数据（这是"数据持久化"那一层的做法）
+services:
+  rag:
+    build: .
+    ports:
+      - "8600:8600"
+    environment:
+      # 密钥从宿主机环境变量传入，不写进镜像（.env 文件里放 DEEPSEEK_API_KEY）
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - SERVICE_API_KEY=${SERVICE_API_KEY:-}
+      # 离线模式：模型已随镜像/缓存提供时避免联网卡死；要联网下载就删掉这两行
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+    volumes:
+      - ./data:/app/data
+      - ../学习笔记:/app/../学习笔记:ro
+      - ../rag/notes:/app/../rag/notes:ro
+    restart: unless-stopped

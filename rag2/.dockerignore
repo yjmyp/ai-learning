@@ -1,0 +1,8 @@
+# 索引、缓存、日志不进镜像（用 volume 挂载）
+data/
+__pycache__/
+*.pyc
+eval/
+docs/
+*.md
+.venv/
