@@ -12,8 +12,10 @@
 
 ## 在线演示
 
-- OfferAgent 求职工作台：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/
-- RAG 检索服务：https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/
+- OfferAgent 求职工作台：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/（访问密码：yujian2027）
+- RAG 检索服务：https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/（访问密码：1346790）
+
+> 两个演示均设置了访问密码以保护 API 成本（公开部署曾被刷），密码仅供招聘方体验。
 
 ## 技术栈
 

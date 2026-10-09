@@ -56,7 +56,12 @@ TEMPLATE_DESC = {
 # ---------- 公用片段：每个模板都会用到的「零件」，写一次 ----------
 
 def _links_html(content) -> str:
-    return "<br>".join(f"{label}：{url}" for label, url in content["links"])
+    parts = []
+    for link in content["links"]:
+        label, url = link[0], link[1]
+        suffix = link[2] if len(link) > 2 else ""
+        parts.append(f"{label}：{url}{suffix}")
+    return "<br>".join(parts)
 
 
 def _meta_html(content) -> str:
@@ -329,7 +334,12 @@ def to_markdown(content=None) -> str:
     lines += [m.replace("<b>", "**").replace("</b>", "**").replace("<br>", "；")
               for m in c["meta"]]
     if c.get("links"):
-        lines.append("；".join(f"{label}：{url}" for label, url in c["links"]))
+        link_parts = []
+        for link in c["links"]:
+            label, url = link[0], link[1]
+            suffix = link[2] if len(link) > 2 else ""
+            link_parts.append(f"{label}：{url}{suffix}")
+        lines.append("；".join(link_parts))
     lines += ["", "## 个人概述", ""]
     lines += [c.get("summary", "")]
     lines += ["", "## 教育背景", ""]
