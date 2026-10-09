@@ -50,4 +50,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # prometheus：给 Prometheus 抓取；生产环境建议只在内网/带鉴权暴露
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: offeragent-api
+  endpoint:
+    health:
+      show-details: when-authorized

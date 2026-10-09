@@ -1,6 +1,7 @@
 package com.yujian.offeragent;
 
 import org.junit.jupiter.api.Test;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -27,7 +28,7 @@ class RateLimitInterceptorTest {
     void 未超限时放行并回填剩余额度头() throws Exception {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         ops(redis, 3L);
-        var interceptor = new RateLimitInterceptor(redis, 30);
+        var interceptor = new RateLimitInterceptor(redis, new SimpleMeterRegistry(), 30);
         var req = new MockHttpServletRequest("GET", "/api/jobs");
         var resp = new MockHttpServletResponse();
 
@@ -40,7 +41,7 @@ class RateLimitInterceptorTest {
     void 超限时返回429并带RetryAfter() throws Exception {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         ops(redis, 31L);                       // 上限 30，第 31 次应被拦
-        var interceptor = new RateLimitInterceptor(redis, 30);
+        var interceptor = new RateLimitInterceptor(redis, new SimpleMeterRegistry(), 30);
         var req = new MockHttpServletRequest("GET", "/api/jobs");
         var resp = new MockHttpServletResponse();
 
@@ -54,7 +55,7 @@ class RateLimitInterceptorTest {
     void Redis不可用时降级放行而不是把业务带崩() throws Exception {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         given(redis.opsForValue()).willThrow(new RuntimeException("connection refused"));
-        var interceptor = new RateLimitInterceptor(redis, 30);
+        var interceptor = new RateLimitInterceptor(redis, new SimpleMeterRegistry(), 30);
         var req = new MockHttpServletRequest("GET", "/api/jobs");
         var resp = new MockHttpServletResponse();
 

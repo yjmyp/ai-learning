@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
@@ -23,9 +25,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 这类"状态码语义错"的 bug 只有断言状态码才能守住。
  */
 @WebMvcTest(ApiController.class)
-@Import({ApiController.class, WebConfig.class, RateLimitInterceptor.class})
+@Import({ApiController.class, WebConfig.class, RateLimitInterceptor.class,
+         ApiControllerTest.Meters.class})
 @AutoConfigureMockMvc(addFilters = false)   // 鉴权由 ApiKeyAuthFilterTest 单独测，这里只验控制器逻辑
 class ApiControllerTest {
+
+    // 限流拦截器现在要 MeterRegistry；切片测试不会自动装配指标模块，这里手工提供一个内存实现
+    @TestConfiguration
+    static class Meters {
+        @Bean
+        io.micrometer.core.instrument.MeterRegistry meterRegistry() {
+            return new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        }
+    }
 
     @Autowired
     private MockMvc mvc;

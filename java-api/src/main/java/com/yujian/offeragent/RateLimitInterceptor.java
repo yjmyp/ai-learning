@@ -2,6 +2,7 @@ package com.yujian.offeragent;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,10 +30,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final StringRedisTemplate redis;
     private final int limitPerMinute;
+    private final MeterRegistry registry;
 
     public RateLimitInterceptor(StringRedisTemplate redis,
+                               MeterRegistry registry,
                                @Value("${offeragent.rate-limit-per-minute:30}") int limitPerMinute) {
         this.redis = redis;
+        this.registry = registry;
         this.limitPerMinute = limitPerMinute;
     }
 
@@ -54,6 +58,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             response.setHeader("X-RateLimit-Limit", String.valueOf(limitPerMinute));
             response.setHeader("X-RateLimit-Remaining", String.valueOf(Math.max(limitPerMinute - used, 0)));
             if (used > limitPerMinute) {
+                registry.counter("oa.ratelimit.blocked").increment();
                 long retryAfter = 60 - (Instant.now().getEpochSecond() % 60);
                 response.setStatus(429);
                 response.setHeader("Retry-After", String.valueOf(retryAfter));

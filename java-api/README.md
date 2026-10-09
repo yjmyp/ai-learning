@@ -91,6 +91,70 @@ JSON 文件（Python 侧仍在写）
 
 ## 边界处理（这几条是踩过才写的）
 
+## 指标与观测（2026-10-09 加 Micrometer + Prometheus）
+
+```bash
+curl.exe http://127.0.0.1:8080/actuator/prometheus | findstr oa_
+```
+
+自研指标（都带 `application="offeragent-api"` 标签）：
+
+| 指标 | 含义 |
+|---|---|
+| `oa_cache_hits_total{cache}` / `oa_cache_misses_total{cache}` | 缓存命中/未命中，用来算命中率 |
+| `oa_db_query_seconds{query}` | 真正打到数据库的耗时（Timer，含 count/sum/max） |
+| `oa_ratelimit_blocked_total` | 被限流拦下的次数 |
+| 框架自带：`http_server_requests_seconds`、`hikaricp_connections_*`、`jvm_*` | 请求延迟、连接池、JVM |
+
+**为什么不用 `@Cacheable` 而是手写 cache-aside**：`@Cacheable` 命中时**根本不进方法体**，
+命中/未命中就无从埋点——而"缓存命中率"恰恰是缓存最该看的指标。手写之后读写路径都看得见。
+
+实测（本机真 MySQL + Redis，3 次查询 + 1 次超限）：
+
+```
+oa_cache_hits_total{cache="jobs"} 2.0        # 命中 2 次
+oa_cache_misses_total{cache="jobs"} 1.0      # 只查了一次库
+oa_db_query_seconds_count{query="jobs"} 1
+oa_ratelimit_blocked_total 1.0
+http_server_requests_seconds_count{status="429",uri="/api/jobs"} 1
+hikaricp_connections_active{pool="HikariPool-1"} 0.0
+```
+
+### 接 Grafana（3 步）
+
+1. **Prometheus 抓取**（`prometheus.yml`）：
+
+```yaml
+scrape_configs:
+  - job_name: offeragent-api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]   # 容器里抓宿主机；同 compose 网络里写服务名 java-api:8080
+```
+
+2. **Grafana 加数据源**：Configuration → Data Sources → Prometheus → URL 填 `http://prometheus:9090` → Save & Test。
+
+3. **常用面板 PromQL**：
+
+```promql
+# 缓存命中率（5 分钟）
+sum(rate(oa_cache_hits_total[5m])) by (cache)
+  / (sum(rate(oa_cache_hits_total[5m])) by (cache) + sum(rate(oa_cache_misses_total[5m])) by (cache))
+
+# 数据库查询 P95
+histogram_quantile(0.95, sum(rate(oa_db_query_seconds_bucket[5m])) by (le))
+
+# 限流触发速率（每分钟）
+sum(increase(oa_ratelimit_blocked_total[1m]))
+
+# 接口延迟 P95 与 5xx 比例
+histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{uri="/api/jobs"}[5m])) by (le))
+sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m]))
+```
+
+> 注意：`/actuator/prometheus` 目前是免鉴权暴露的（本地开发方便）。**生产环境要收口**——
+> 要么只在内网暴露，要么在 Security 里给它加权限，避免把 JVM/连接池/接口维度信息白送出去。
+
 1. **入参在边界校验**：`q` 非空且 ≤2000 字、`topK` 1~50、不传 `topK` 默认 5；违规返回
    `400 {"error":"bad_request","fields":["topK: topK 最大 50"]}`。
 2. **状态码语义不能糊**：下游返回 4xx/5xx 时**透传原状态码**，只有连不上才报 502。
@@ -107,8 +171,9 @@ JSON 文件（Python 侧仍在写）
 ## 已验证
 
 ```
-mvn test                                   → Tests run: 14, Failures: 0, Errors: 0
-                                             （3 控制器 + 6 鉴权过滤器 + 5 限流器）
+mvn test                                   → Tests run: 19, Failures: 0, Errors: 0, Skipped: 5
+                                             本地无 Docker：14 个单元/切片用例通过，5 个集成用例自动跳过
+                                             CI（有 Docker）：19 个全跑，真起 MySQL/Redis 容器
 python java-api/test_docker_static.py       → 22/22（含重复键检测；已用故意重复的 YAML 验证过它会失败）
 MySQL offeragent.job                       → 22 行 / avg 65 / 最高 88
 鉴权                                       → 无/错 Key 401；未配 Key 503（fail closed）；/api/health、/actuator/** 免鉴权
@@ -127,9 +192,10 @@ POST /api/rag/search {"q":"x","topK":999}   → 400 bad_request
 ## 还没做（如实写）
 
 - **只支持单 Key**：轮换要支持"多 Key + 有效期 + 灰度切换"，把 Key 从配置挪到表里并记录最后使用时间。
-- **集成测试没进 CI**：`mvn test` 跑的是不依赖外部服务的单元/切片测试（14 个）；
-  连真实 MySQL/Redis 的验证目前靠本地手工执行（CI runner 上没有这两个服务）。
-  要补就得用 Testcontainers 或在 CI 里起 service 容器。
+- **集成测试已进 CI**（Testcontainers 真起 MySQL/Redis 容器）：本地没 Docker 时
+  `@Testcontainers(disabledWithoutDocker = true)` 会自动跳过，CI runner 上有 Docker 会真跑；
+  岗位数据用临时夹具生成，**不依赖本地 `offeragent/data/`**（那是 gitignore 的隐私数据）。
 - **表结构靠 `ddl-auto=update`**：生产环境应换成 Flyway / Liquibase 版本化迁移。
-- **没有指标与追踪**：现在只有 Actuator 健康检查，缺 Prometheus 指标与链路追踪。
+- **缺链路追踪**：指标有了（Micrometer + Prometheus），但跨 Java ↔ Python 的 trace 还没串起来。
+- **Prometheus 端点没收口**：现在免鉴权暴露，生产要限内网或加权限。
 - **限流/缓存没压测**：容量数据是空的（Python 侧有压测脚本可参考）。

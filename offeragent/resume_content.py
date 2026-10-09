@@ -53,7 +53,8 @@ DEFAULT_CONTENT = {
                 "Spring Security + API Key 鉴权（缺 Key 返回 503，fail closed，定长比较防时序攻击）；"
                 "AI 请求转发给 Python 服务（连接 3s / 读 60s 分别配超时），下游 4xx 透传状态码；"
                 "多阶段构建镜像 + compose 编排 MySQL/Redis（等健康再起），Docker 配置静态校验 22/22；"
-                "14 个接口 / 鉴权 / 限流测试 0 失败。",
+                "Micrometer + Prometheus 暴露缓存命中率与接口指标，Testcontainers 集成测试真起 "
+                "MySQL/Redis 容器（本地无 Docker 自动跳过）；19 个单元 / 集成测试 0 失败。",
                 "工程化：bge 向量记忆（三档降级保证离线可用）、线程池并发批量打分、调用 trace 落盘与可视化、"
                 "Token 与成本计量；11 个页面按数据 / AI / UI 三层拆分，离线回归测试 0 失败，"
                 "CI 覆盖单测 / 服务验收 / 镜像构建。",
@@ -97,6 +98,7 @@ DEFAULT_CONTENT = {
         ("后端与数据（Java）", "SpringBoot 3 / JDK 21、Spring Data JPA + Hibernate、MySQL（建表与索引、"
                               "连接池 HikariCP、只读事务）、Redis（缓存 TTL、固定窗口限流）、"
                               "REST 接口设计与入参校验、Spring Security API Key 鉴权、"
+                              "Micrometer + Prometheus 指标、Testcontainers 集成测试、"
                               "Docker 多阶段构建与 compose 编排、Maven"),
         ("计算机基础", "计算机网络、操作系统、数据库原理"),
     ],

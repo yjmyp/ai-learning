@@ -177,6 +177,21 @@
    - **简历**：技能补 Spring Security/Docker compose；API 层 bullet 补鉴权 fail-closed、限流维度、compose 编排与 22/22 静态校验。**仍是 1 页**
    - **仍未做（如实）**：多 Key 轮换与审计、集成测试进 CI（Testcontainers）、`ddl-auto` 换 Flyway、Prometheus 指标与链路追踪、限流/缓存容量压测
 
+31. **2026-10-09 java-api 加指标 + 集成测试进 CI**（用户"这些先做"）
+   - **① Micrometer + Prometheus 指标**：
+     - 自研指标 `oa.cache.hits` / `oa.cache.misses`（带 cache 标签）、`oa.db.query`（Timer）、`oa.ratelimit.blocked`；框架自带 `http_server_requests`、`hikaricp_connections_*`、`jvm_*`
+     - **把 `@Cacheable` 改成手写 cache-aside**，原因写进注释：`@Cacheable` 命中时根本不进方法体，**命中/未命中就没法埋点**，而命中率恰恰是缓存最该看的指标
+     - 实测（本机真 MySQL+Redis）：`oa_cache_hits_total{cache="jobs"} 2` / `oa_cache_misses_total{cache="jobs"} 1` / `oa_db_query_seconds_count{query="jobs"} 1` / `oa_ratelimit_blocked_total 1` / `http_server_requests_seconds_count{status="429"} 1` / `hikaricp_connections_active 0`
+     - README 补了 Grafana 三步接线（Prometheus scrape 配置 + Grafana 数据源 + 4 条常用 PromQL：缓存命中率、DB P95、限流速率、接口 P95/5xx 比例），并写明**生产要把 `/actuator/prometheus` 收口**（现在免鉴权）
+   - **② 集成测试（Testcontainers）真起 MySQL + Redis 容器**：
+     - `IntegrationTestBase`：`@Testcontainers(disabledWithoutDocker = true)` → **本地无 Docker 自动跳过，CI 有 Docker 真跑**；岗位数据用**临时夹具**生成（`offeragent/data/` 是 gitignore 的，CI 上根本没有）
+     - `ApiIntegrationTest` 4 例：启动导入夹具 → MySQL 2 行；**相同参数第二次查不再打 MySQL**（`@SpyBean` 验证 repository 只被调 1 次 + Redis 有 `jobs::70:5` 键）；接口鉴权 401/200；`/actuator/prometheus` 含自研指标
+     - `RateLimitIntegrationTest` 1 例：上限压到 2/分钟，第 3 次 429 + Retry-After，且 Redis key 里**不含明文 Key**
+     - 本地结果：`mvn test` **19 个用例，14 通过 / 5 跳过（无 Docker）**；CI 上会全部真跑
+   - **踩到两个编译错**：方法名里用了全角冒号（Java 标识符不允许）、`new HttpEntity<>(null, ...)` 类型推断失败 → 都已修
+   - **简历**：技能补「Micrometer + Prometheus 指标、Testcontainers 集成测试」；API 层 bullet 补指标与集成测试、测试数改 19。**仍是 1 页**
+   - **仍未做**：Java↔Python 跨服务链路追踪、Prometheus 端点收口、多 Key 轮换与审计、`ddl-auto` 换 Flyway、限流/缓存容量压测
+
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`
