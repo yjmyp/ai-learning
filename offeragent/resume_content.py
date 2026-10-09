@@ -82,7 +82,7 @@ DEFAULT_CONTENT = {
     ],
     "education": "<b>南京邮电大学</b> ｜ 网络工程（本科） ｜ 2023.09 – 2027.06<br>"
                  "主修课程：数据结构与算法、计算机网络、操作系统、数据库原理<br>"
-                 "自学：大模型原理（Transformer / Attention）、LoRA 微调原理、Agent 设计模式与评估方法",
+                 "拓展学习：大模型原理（Transformer / Attention）、LoRA 微调原理、Agent 设计模式与评估方法",
     "skills": [
         ("编程语言", "Python（主力，熟悉 FastAPI / Streamlit）、Java（SpringBoot 3 + REST 接口开发，JDK 21）、SQL；"
                      "数据结构与算法（哈希、双指针、滑动窗口、链表、二叉树、DFS / BFS、二分、回溯、动态规划）"),

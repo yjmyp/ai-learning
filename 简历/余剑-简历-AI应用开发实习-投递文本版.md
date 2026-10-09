@@ -11,7 +11,7 @@ GitHub：https://github.com/yjmyp/ai-learning；OfferAgent 演示：https://ai-l
 
 ## 教育背景
 
-**南京邮电大学** ｜ 网络工程（本科） ｜ 2023.09 – 2027.06；主修课程：数据结构与算法、计算机网络、操作系统、数据库原理；自学：大模型原理（Transformer / Attention）、LoRA 微调原理、Agent 设计模式与评估方法
+**南京邮电大学** ｜ 网络工程（本科） ｜ 2023.09 – 2027.06；主修课程：数据结构与算法、计算机网络、操作系统、数据库原理；拓展学习：大模型原理（Transformer / Attention）、LoRA 微调原理、Agent 设计模式与评估方法
 
 ## 专业技能
 

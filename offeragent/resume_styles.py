@@ -9,7 +9,7 @@ resume_styles · 简历样式层（纯 CSS，不含内容与逻辑）
 CSS_CLASSIC = """
 * { box-sizing: border-box; }
 body { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
-       color: #1F2328; margin: 0; background: #eceff3; font-size: 13px; line-height: 1.62; }
+       color: #1F2328; margin: 0; background: #eceff3; font-size: 13px; line-height: 1.68; }
 .page { width: 800px; margin: 18px auto; background: #fff; padding: 42px 50px 34px;
         box-shadow: 0 2px 14px rgba(0,0,0,.12); }
 .head { display: flex; gap: 22px; align-items: flex-start; }
@@ -24,12 +24,12 @@ h1 { font-size: 26px; margin: 0 0 7px; letter-spacing: 1px; color: #0F172A; }
 .meta { font-size: 12.5px; color: #4B5563; line-height: 1.8; }
 .meta b { color: #111827; }
 .links { font-size: 12.5px; color: #1D4ED8; margin-top: 4px; word-break: break-all; }
-h2 { font-size: 14px; color: #0F172A; margin: 19px 0 8px; padding-bottom: 5px;
+h2 { font-size: 14px; color: #0F172A; margin: 20px 0 10px; padding-bottom: 5px;
      border-bottom: 1px solid #E5E9F2; letter-spacing: .6px; }
 h2::before { content: ''; display: inline-block; width: 4px; height: 13px;
              background: #1D4ED8; border-radius: 2px; margin-right: 8px;
              vertical-align: -1px; }
-.proj { margin-bottom: 14px; }
+.proj { margin-bottom: 16px; }
 .proj-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .proj-title { font-size: 14px; font-weight: 700; color: #0F172A; }
 .proj-date { font-size: 11.5px; color: #6B7280; white-space: nowrap; }
@@ -38,12 +38,12 @@ h2::before { content: ''; display: inline-block; width: 4px; height: 13px;
 .chip { font-size: 11px; color: #1D4ED8; background: #F2F5FE; border: 1px solid #E1E8FA;
         border-radius: 5px; padding: 1px 7px; }
 ul { margin: 2px 0 0; padding-left: 17px; }
-li { margin: 3px 0; }
+li { margin: 4px 0; }
 li::marker { color: #9AA6B8; }
 .skills div { margin: 3px 0; }
 .skills b { display: inline-block; min-width: 88px; color: #0F172A; }
 .note { font-size: 12.2px; color: #4B5563; }
-.foot { font-size: 10.5px; color: #9CA3AF; margin-top: 16px; border-top: 1px solid #EEF1F5;
+.foot { font-size: 10.5px; color: #9CA3AF; margin-top: 14px; border-top: 1px solid #EEF1F5;
         padding-top: 8px; }
 @media print {
   body { background: #fff; font-size: 10.2px; line-height: 1.34; }
@@ -52,7 +52,7 @@ li::marker { color: #9AA6B8; }
   h1 { font-size: 19px; margin: 0 0 2px; } .role { font-size: 11.4px; margin-bottom: 2px; }
   .meta { font-size: 10.1px; line-height: 1.45; } .links { font-size: 10.1px; margin-top: 1px; }
   h2 { font-size: 11.8px; margin: 5px 0 2px; padding-bottom: 1px; }
-  .proj { margin-bottom: 4px; }
+  .proj { margin-bottom: 3px; }
   .proj-title { font-size: 11.6px; }
   .result { font-size: 10px; margin: 1px 0 2px; }
   .tech { font-size: 9.9px; margin: 1px 0 1px; gap: 3px; }
