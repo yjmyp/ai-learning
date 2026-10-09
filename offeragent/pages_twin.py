@@ -14,6 +14,7 @@ from llm import *
 from ui_kit import *
 import apply_assist
 import digital_twin
+import twin_guard
 import distill
 import job_sources
 import theme
@@ -84,7 +85,20 @@ PRESET_QUESTIONS = [
 
 
 def _twin_answer(profile: str, question: str) -> str:
-    return digital_twin.twin_answer(profile, question, lambda p: ask_chat(p))
+    """名片页问答入口：**先过额度守卫**，再调模型。
+
+    为什么必须挡一道：名片页是免密公开的，每次提问都花我的 DeepSeek 额度；
+    原先只有全局每日 200 次上限，一个人拿到链接就能把当天额度刷光（低成本 DoS）。
+    守卫按「访问者 IP 每天 8 次 + 名片页每天 60 次」双层限额。
+    """
+    ok, why, left = twin_guard.check(twin_guard.visitor_ip())
+    if not ok:
+        return (f"（{why}。这个公开问答的额度是为了防止被刷掉，"
+                "如果还需要了解什么，可以直接邮件联系我：yj2994762833@gmail.com）")
+    ans = digital_twin.twin_answer(profile, question, lambda p: ask_chat(p))
+    if left >= 0:
+        st.session_state["twin_left"] = left
+    return ans
 
 
 def _resume_pdf_path():
@@ -183,6 +197,10 @@ def page_twin_portal():
                 ans = f"（回答问题失败：{e}）"
             st.markdown(ans)
         st.session_state["twin_chat"].append({"role": "assistant", "content": ans})
+    # 公开问答有额度（防刷），把剩余次数显示出来，免得面试官以为是坏了
+    _left = st.session_state.get("twin_left")
+    if isinstance(_left, int) and _left >= 0:
+        st.caption(f"本次访问还可以问 {_left} 个问题（公开问答设了每日额度，避免被刷掉）。")
 
     # ── ③ 我是谁 / 项目证据 ────────────────────────────────
     tab_who, tab_proof = st.tabs(["我是谁", "项目证据"])
