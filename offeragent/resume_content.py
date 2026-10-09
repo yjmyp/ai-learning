@@ -18,7 +18,6 @@ DEFAULT_CONTENT = {
     "meta": [
         "<b>南京邮电大学</b> · 网络工程 · 本科 · 2027 届（2023.09–2027.06）",
         "17578999648 ｜ yj2994762833@gmail.com ｜ 南京（南京 onsite 优先，可远程）",
-        "可立即到岗 · 4–5 天/周 · 可连续实习 6 个月以上（2027.06 毕业可无缝转正）",
     ],
     "links": [
         ("OfferAgent", "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/"),
