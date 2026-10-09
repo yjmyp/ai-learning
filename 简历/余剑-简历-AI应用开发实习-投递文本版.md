@@ -3,7 +3,7 @@
 **南京邮电大学** · 网络工程 · 本科 · 2027 届（2023.09–2027.06）
 电话：17578999648 ｜ 邮箱：yj2994762833@gmail.com ｜ 南京
 可实习：2026.09 起，每周 4–5 天，可连续 6 个月以上
-GitHub：https://github.com/yjmyp/ai-learning；OfferAgent 演示：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/；RAG 检索服务：https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/
+OfferAgent 演示：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/；RAG 检索服务：https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/
 
 ## 个人概述
 

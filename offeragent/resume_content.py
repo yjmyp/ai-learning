@@ -21,7 +21,6 @@ DEFAULT_CONTENT = {
         "可实习：2026.09 起，每周 4–5 天，可连续 6 个月以上",
     ],
     "links": [
-        ("GitHub", "https://github.com/yjmyp/ai-learning"),
         ("OfferAgent 演示", "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/"),
         ("RAG 检索服务", "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"),
     ],
