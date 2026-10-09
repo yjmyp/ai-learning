@@ -32,11 +32,16 @@ except Exception:
 import browser_fetch as bf  # noqa: E402
 
 # 默认要保活的链接（marker = 应用真正渲染出来时页面里一定会出现的字）
+#
+# 只保活"简历里对外给出的那个链接"：
+#  · 根链接（不带参数）有访问密码墙，保活了面试官也看不到内容，没意义；
+#  · ?twin=1 是免密数字名片页，这才是给 HR / 面试官的入口；
+#  · RAG 云端部署目前是崩的（点开是 Traceback），已从简历移除，先不保活——
+#    等修好再加回来（加回来时记得把 marker 一起补上）。
 APPS = [
-    {"name": "OfferAgent", "url": "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/",
-     "markers": ["OfferAgent", "求职"]},
-    {"name": "RAG 知识库", "url": "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/",
-     "markers": ["知识库", "访问密码"]},
+    {"name": "OfferAgent 数字名片（免密）",
+     "url": "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/?twin=1",
+     "markers": ["名片", "求职", "余剑"]},
 ]
 
 CLICK_JS = """(function(){

@@ -20,8 +20,14 @@ DEFAULT_CONTENT = {
         "电话：17578999648 ｜ 邮箱：yj2994762833@gmail.com ｜ 南京",
     ],
     "links": [
-        ("OfferAgent 演示", "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/"),
-        ("RAG 检索服务", "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"),
+        # 只放"陌生人点开就能看"的链接（判断依据是笔记里的自检项"上线链接能打开、能演示吗"）：
+        #  1) 根链接有访问密码墙，面试官看到的是密码输入框 → 换成免密数字名片页（?twin=1），
+        #     点开就是画像 + 预设问题，可以直接对着问；简历里绝不写密码（简历会外传，等于没设）。
+        #  2) RAG 云端部署已崩（点开是 Traceback，比没链接更糟）→ 不放，
+        #     它的可验证性由 GitHub 上的评估集与压测报告承担。
+        ("GitHub（代码 / 评估集 / 压测报告）", "https://github.com/yjmyp/ai-learning"),
+        ("OfferAgent 数字名片（免密，可直接提问）",
+         "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/?twin=1"),
     ],
     "summary": "独立完成两个自研项目：Agent 工具调用与工作流引擎（OfferAgent）、RAG 检索问答服务；"
                "均带自建评估集、压测报告与部署脚本，代码与评估数据在 GitHub 仓库。",
