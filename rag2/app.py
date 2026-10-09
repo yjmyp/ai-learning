@@ -8,25 +8,12 @@ from config import CHUNK_OVERLAP, CHUNK_SIZE, DEFAULT_TOP_K, EMBED_MODEL, LLM_MO
 from engine import get_engine
 from qa import ask_deepseek
 
+# ===== 公开访问保护：每日配额制（防陌生人刷 API 成本，替代密码门）=====
+# 密码门已移除：面试官免密直接体验；ask_deepseek 前由 quota.check() 限次。
+# 上次公开部署被刷 31 元的教训：无密码 + 无限额 = 被批量刷。现在默认 300 次/天。
+import quota
+
 st.set_page_config(page_title="AI 学习知识库 v2", page_icon="📚", layout="wide")
-
-# ===== 访问密码门：防止公开部署被陌生人刷 API key（上次烧钱 31 元的教训）=====
-# 密码从 Streamlit Cloud secrets 或环境变量读取，不写死在代码里
-APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") or os.environ.get("APP_PASSWORD", "")
-
-if APP_PASSWORD:
-    if "unlocked" not in st.session_state:
-        st.session_state.unlocked = False
-    if not st.session_state.unlocked:
-        st.title("🔒 此应用需要访问密码")
-        pwd = st.text_input("请输入访问密码", type="password")
-        if st.button("进入"):
-            if pwd == APP_PASSWORD:
-                st.session_state.unlocked = True
-                st.rerun()
-            else:
-                st.error("密码错误，请重试")
-        st.stop()
 
 
 @st.cache_resource(show_spinner="加载知识库（首次会构建索引）...")
@@ -62,6 +49,11 @@ with tab_ask:
         elif not get_api_key():
             st.error("未找到 DEEPSEEK_API_KEY（检查 local_key.py 或 .streamlit/secrets.toml）")
         else:
+            try:
+                quota.check()
+            except RuntimeError as e:
+                st.error(str(e))
+                st.stop()
             with st.spinner("检索资料 + 生成回答中..."):
                 chunks = engine.retrieve(question, top_k, use_rerank)
                 answer = ask_deepseek(question, chunks, get_api_key())

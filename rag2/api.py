@@ -5,11 +5,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from config import get_api_key
 from engine import get_engine
 from qa import ask_deepseek
+import quota
 
 
 @asynccontextmanager
@@ -55,6 +57,10 @@ def retrieve(question: str, top_k: int = 4, use_rerank: bool = True):
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
     engine = get_engine()
+    try:
+        quota.check()
+    except RuntimeError as e:
+        return JSONResponse(status_code=429, content={"detail": str(e)})
     t0 = time.time()
     chunks = engine.retrieve(req.question, req.top_k, req.use_rerank)
     answer = ask_deepseek(req.question, chunks, get_api_key())
