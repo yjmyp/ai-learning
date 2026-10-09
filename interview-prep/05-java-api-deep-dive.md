@@ -68,6 +68,24 @@
 - **根因**：YAML 对同一 mapping 的重复键是"后者覆盖前者"且**不报错**；数据源配置被静默丢掉，容器起来连不上库。
 - **修复 + 防回归**：合并成一个 `environment`；并写了一个**严格 YAML 加载器**（自定义 constructor，遇重复键抛错）放进 `test_docker_static.py`，本地没 Docker 也能拦住这类错误。我还专门用一段"故意重复"的 YAML 验证过这个检查真的会失败（不能失败的检查等于没有）。
 
+### STORY 6｜只在测试里出现的 404：/actuator/prometheus 找不到
+
+- **现象**：本地跑 jar，`/actuator/prometheus` 200、启动日志写 `Exposing 3 endpoints`；
+  集成测试（CI 上，真起 MySQL/Redis 容器）里同一个端点 **404**，日志写 `Exposing 2 endpoints`。
+- **定位**：先把嫌疑逐个排除——不是依赖缺失（`micrometer-registry-prometheus` 在 CI 日志里确实下载了）、
+  不是配置文件没提交（`git show HEAD:...application.yml` 里 `exposure.include` 有 prometheus，远端也有）、
+  也不是类路径问题（我用**测试类路径**跑主类，仍然是 3 个端点）。
+  最后用一个临时的 `@SpringBootTest` 探针在本地复现了 404，再开 `-Ddebug=true` 看自动配置的条件评估报告，
+  拿到决定性证据：`PrometheusMetricsExportAutoConfiguration: Did not match -
+  @ConditionalOnEnabledMetricsExport management.defaults.metrics.export.enabled is considered false`。
+- **根因**：**Spring Boot 的测试上下文默认关闭指标导出**，于是 `PrometheusMeterRegistry` 不被创建，
+  依赖它的 `PrometheusScrapeEndpoint` 也不注册 → 端点不存在 → 404。生产运行不触发这个默认值。
+- **修复**：集成测试基类上显式加 `management.prometheus.metrics.export.enabled=true`
+  （只加 `management.defaults.metrics.export.enabled=true` **不够**，要写具体到 prometheus 的那个前缀——这点也实测过）。
+- **防回归 + 学到的事**：①"本地能跑"和"测试里能跑"是两种环境，**平台/上下文默认值也会不一样**；
+  ②排这种问题要用"逐个排除 + 让框架自己说条件为什么不满足（`-Ddebug=true`）"，而不是靠猜；
+  ③集成测试一旦进 CI，就能抓到这类本地（没有 Docker、跑不了集成测试）永远看不到的问题。
+
 ## 五、高频追问与参考答案
 
 | 追问 | 怎么答 |

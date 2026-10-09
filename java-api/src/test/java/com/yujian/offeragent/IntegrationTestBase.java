@@ -24,7 +24,14 @@ import java.nio.file.Path;
 //     否则本地 mvn test 会因为环境缺失而报红；CI runner 上有 Docker，会真跑。
 //  2. 岗位数据自带夹具：offeragent/data/ 是 gitignore 的（隐私数据不入库），
 //     CI 上并不存在，所以这里临时生成两份 meta.json 并指过去——测试不依赖本地数据。
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// management.prometheus.metrics.export.enabled=true 不能省：
+// Spring Boot 的测试上下文默认**关闭指标导出**（条件评估里写的是
+// "management.defaults.metrics.export.enabled is considered false"），
+// 于是 PrometheusMeterRegistry 根本不创建，/actuator/prometheus 直接 404。
+// 这个坑只在测试里出现（本地跑 jar 是 3 个端点、prometheus 200），
+// CI 上集成测试第一次跑就撞到了。显式打开导出后测试上下文与生产行为一致。
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "management.prometheus.metrics.export.enabled=true")
 @Testcontainers(disabledWithoutDocker = true)
 public abstract class IntegrationTestBase {
 

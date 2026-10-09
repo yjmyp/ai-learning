@@ -167,6 +167,11 @@ sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http
 6. **`@EnableCaching` 不能省**：Spring Boot 的 CacheManager 是条件装配的，漏了它启动直接报
    `required a bean of type CacheManager that could not be found`。
 7. **关掉 `spring.data.redis.repositories`**：否则 Spring Data Redis 会去扫 JPA 接口并刷告警。
+8. **测试上下文默认"不导出指标"**：`/actuator/prometheus` 在集成测试里返回 **404**，
+   根因是条件评估给出的 `management.defaults.metrics.export.enabled is considered false`——
+   测试环境下 Boot 默认关闭指标导出，于是 `PrometheusMeterRegistry` 根本没创建、端点也不注册。
+   集成测试里显式加 `management.prometheus.metrics.export.enabled=true` 即可；
+   **生产运行（jar / 容器）不受影响**（本地跑 jar 是 3 个端点、prometheus 200，测试里是 2 个、404）。
 
 ## 已验证
 

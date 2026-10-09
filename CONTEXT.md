@@ -192,6 +192,16 @@
    - **简历**：技能补「Micrometer + Prometheus 指标、Testcontainers 集成测试」；API 层 bullet 补指标与集成测试、测试数改 19。**仍是 1 页**
    - **仍未做**：Java↔Python 跨服务链路追踪、Prometheus 端点收口、多 Key 轮换与审计、`ddl-auto` 换 Flyway、限流/缓存容量压测
 
+32. **2026-10-09 ⭐ CI 抓到"只在测试里出现"的 404，根因是 Boot 测试默认关闭指标导出**
+   - **现象**：本地跑 jar → `/actuator/prometheus` **200**、启动日志 `Exposing 3 endpoints`；CI 里集成测试 → **404**、`Exposing 2 endpoints`（run #52 java-api 档失败）
+   - **排除法过程（值得记的排查套路）**：不是依赖缺失（CI 日志确有下载 micrometer-registry-prometheus）、不是配置文件没提交（`git show HEAD:` 与远端都有 prometheus 暴露）、不是类路径问题（**用测试类路径跑主类仍是 3 个端点**）。最后写了个临时 `@SpringBootTest` 探针**在本地复现 404**，再开 `-Ddebug=true` 看条件评估报告 → 拿到决定性证据：
+     `PrometheusMetricsExportAutoConfiguration: Did not match - @ConditionalOnEnabledMetricsExport management.defaults.metrics.export.enabled is considered false`
+   - **根因**：**Spring Boot 测试上下文默认关闭指标导出** → `PrometheusMeterRegistry` 不创建 → 依赖它的 `PrometheusScrapeEndpoint` 不注册 → 404。生产运行不受影响
+   - **修复**：`IntegrationTestBase` 上加 `@SpringBootTest(properties = "management.prometheus.metrics.export.enabled=true")`。实测**只加 `management.defaults.metrics.export.enabled=true` 无效**，必须写具体前缀
+   - **顺带修的两个编译错**：Java 方法名里不能有全角冒号；`new HttpEntity<>(null, headers)` 要显式 `HttpEntity<Void>`
+   - **产物**：`interview-prep/05-java-api-deep-dive.md` 增加 **STORY 6**（这个 404 的完整排查）；`java-api/README.md` 边界处理第 8 条；临时探针已删除
+   - **教训（写进记忆）**：**"本地能跑"与"测试里能跑"是两种环境**，平台/上下文默认值也可能不同；这类问题只能靠"集成测试进 CI + 让框架自己说条件为什么不满足（-Ddebug=true）"来解决
+
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`
