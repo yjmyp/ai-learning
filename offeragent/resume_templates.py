@@ -89,10 +89,14 @@ def _section_blocks(c, projects_html: str) -> str:
     应届简历的通行顺序是把教育放前面；之前每个模板各写一份、顺序还不一致，
     同一份内容在不同模板里教育/项目的位置会变，属于"看起来乱"的来源之一。
     """
+    other = ""
+    if c.get("notes"):
+        other = f'<h2>其他</h2><ul class="note">{_notes_html(c)}</ul>'
     return (f'{_summary_html(c)}'
             f'<h2>教育背景</h2><div class="meta">{c["education"]}</div>'
             f'<h2>专业技能</h2><div class="skills">{_skills_html(c)}</div>'
-            f'<h2>项目经历</h2>{projects_html}')
+            f'<h2>项目经历</h2>{projects_html}'
+            f'{other}')
 
 
 def _skills_html(content) -> str:
@@ -341,8 +345,10 @@ def to_markdown(content=None) -> str:
         for b in p["bullets"]:
             lines.append("- " + b.replace("<b>", "**").replace("</b>", "**"))
         lines.append("")
-    for n in c.get("notes") or []:
-        lines.append(f"> {n}")
+    if c.get("notes"):
+        lines += ["## 其他", ""]
+        lines += [f"- {n}" for n in c["notes"]]
+        lines.append("")
     return "\n".join(lines)
 
 
