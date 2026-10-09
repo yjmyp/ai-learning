@@ -1,5 +1,5 @@
 # 与仓库根目录的 packages.txt 内容相同：
 # Streamlit Cloud 不同版本对 packages.txt 的查找目录不一样（有的看仓库根、有的看主文件同目录），
 # 两处都放一份，保证 apt 依赖一定被装上。
-libgl1
-libglib2.0-0
+tesseract-ocr
+tesseract-ocr-chi-sim

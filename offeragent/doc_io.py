@@ -52,11 +52,17 @@ def _read_docx(data: bytes) -> tuple:
 
 
 def _read_image(data: bytes) -> tuple:
+    """图片 → 文字。两条路，谁可用走谁：
+
+      1. RapidOCR（本地常用）：中英混排准、离线，但依赖 opencv；
+         实测把它装到 Streamlit Cloud 会把 opencv 拖进来导致构建失败、应用起不来。
+      2. pytesseract + 系统 tesseract（云端走这条）：只依赖 apt 包，装得快、不碰 opencv。
+    两条都按"懒导入"处理——**缺组件只让这一个功能报错，不影响应用启动**（这条是真踩过教训）。
+    """
     try:
         from rapidocr_onnxruntime import RapidOCR
     except Exception:
-        return "", ("没装 OCR 组件。在本机跑一次："
-                    "python -m pip install rapidocr-onnxruntime")
+        return _read_image_tesseract(data)
     import tempfile
     from pathlib import Path
     tmp = Path(tempfile.mkdtemp()) / "upload.png"
@@ -65,11 +71,29 @@ def _read_image(data: bytes) -> tuple:
         engine = RapidOCR()
         result, _ = engine(str(tmp))
     except Exception as e:
-        return "", f"OCR 识别失败：{type(e).__name__}"
+        # RapidOCR 装了但跑不起来（例如缺 libGL）→ 退到 tesseract
+        return _read_image_tesseract(data, note=f"RapidOCR 不可用（{type(e).__name__}）")
     lines = [x[1] for x in (result or [])]
     text = "\n".join(lines).strip()
     warn = "" if len(text) > 20 else "OCR 只识别出很少文字，图片可能太模糊或字太小。"
     return text, warn
+
+
+def _read_image_tesseract(data: bytes, note: str = "") -> tuple:
+    """tesseract 兜底（Streamlit Cloud 用这条：apt 装 tesseract-ocr + chi_sim）。"""
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(data))
+        text = pytesseract.image_to_string(img, lang="chi_sim+eng").strip()
+        if len(text) > 20:
+            return text, note
+        return text, (note + " " if note else "") + "OCR 只识别出很少文字，图片可能太模糊或字太小。"
+    except Exception as e:
+        return "", ("没装 OCR 组件（云端需要 packages.txt 里的 tesseract-ocr + tesseract-ocr-chi-sim，"
+                    "并安装 pytesseract）。本机可跑：python -m pip install rapidocr-onnxruntime。"
+                    "当前错误：%s" % type(e).__name__)
 
 
 def read_any(data: bytes, filename: str) -> dict:
