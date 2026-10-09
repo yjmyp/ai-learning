@@ -2,7 +2,7 @@
 
 **南京邮电大学** · 网络工程 · 本科 · 2027 届（2023.09–2027.06）
 电话：17578999648 ｜ 邮箱：yj2994762833@gmail.com ｜ 南京
-OfferAgent 演示：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/；RAG 检索服务：https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/
+GitHub（代码 / 评估集 / 压测报告）：https://github.com/yjmyp/ai-learning；OfferAgent 数字名片（免密，可直接提问）：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/?twin=1
 
 ## 个人概述
 
