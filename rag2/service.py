@@ -207,6 +207,9 @@ class AskReq(BaseModel):
 
 class ReindexReq(BaseModel):
     force: bool = True
+    # 给了 source 就走增量：只重算这一篇（按文件名在语料目录里找），不动其他块。
+    # 不给就是全量重建（老行为）。改一篇要等整库重建几分钟，线上不能这么干。
+    source: str = Field(default="", max_length=200)
 
 
 @app.get("/health")
@@ -313,6 +316,16 @@ def reindex(req: ReindexReq, x_api_key: str = Header(default="")):
     _check_key(x_api_key)
     global _retriever
     eng, _ = engine()
+    if req.source.strip():
+        import index_incr
+        ok, info, n = index_incr.reindex_source(req.source)
+        if not ok:
+            raise HTTPException(status_code=404, detail={
+                "code": "source_not_found", "message": info})
+        _retriever = RetrieverV3(eng.store, eng.embedder, ask_model=_ask)
+        trace_mod.log("reindex_incremental", source=info, chunks=n)
+        return {"status": "reindexed_incremental", "source": info,
+                "chunks": n, "index_chunks": eng.store.count()}
     eng.ensure_index(force=req.force)
     _retriever = RetrieverV3(eng.store, eng.embedder, ask_model=_ask)
     trace_mod.log("reindex", chunks=eng.store.count())

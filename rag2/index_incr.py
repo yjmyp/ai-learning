@@ -54,6 +54,35 @@ def remove_source(source):
     return n
 
 
+def find_source_file(source_name):
+    """按文件名在配置的语料目录里找文件（给服务端 /reindex 用）。
+
+    只按 basename 精确匹配，避免调用方传一个能被 .. 穿越的相对路径把别处的文件读进来。
+    """
+    import config as _cfg
+    want = os.path.basename(str(source_name or "").strip())
+    if not want:
+        return None
+    for d in _cfg.DOCS_DIRS:
+        for root, _dirs, files in os.walk(d):
+            for fn in files:
+                if fn == want:
+                    return os.path.join(root, fn)
+    return None
+
+
+def reindex_source(source_name, verbose=False):
+    """服务端用的增量重建入口：按来源名找到文件 → 删旧块 → 重切 → 只向量化这一篇。
+
+    返回 (是否成功, 说明, 写入块数)。
+    """
+    path = find_source_file(source_name)
+    if not path:
+        return False, "在语料目录里找不到 %s" % os.path.basename(str(source_name)), 0
+    n = add_file(path, verbose=verbose)
+    return True, os.path.basename(path), n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("path", nargs="?", help="要加入/更新的文件")

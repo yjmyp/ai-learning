@@ -23,6 +23,7 @@ DEFAULT_CONTENT = {
     "links": [
         ("GitHub", "https://github.com/yjmyp/ai-learning"),
         ("OfferAgent 演示", "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/"),
+        ("RAG 检索服务", "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"),
     ],
     "summary": "独立完成两个自研项目：Agent 工具调用与工作流引擎（OfferAgent）、RAG 检索问答服务；"
                "均带自建评估集、压测报告与部署脚本，代码与评估数据在 GitHub 仓库。",

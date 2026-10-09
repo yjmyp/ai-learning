@@ -103,6 +103,22 @@ def main():
                               headers={"X-API-Key": KEY}, timeout=30)
         checks.append(("top_k 越界被挡下（422）", big_k.status_code == 422))
 
+        # 增量重建：传 source 只重算这一篇，全库块数不变（不用等整库重建几分钟）
+        before_total = requests.get(BASE + "/ready", timeout=60).json().get("index_chunks")
+        incr = requests.post(BASE + "/reindex", json={"source": "大模型入门.txt"},
+                             headers={"X-API-Key": KEY}, timeout=300)
+        incr_json = incr.json() if incr.status_code == 200 else {}
+        checks.append(("增量重建端点：按来源重算且不动全库（%s → %s）"
+                       % (before_total, incr_json.get("index_chunks")),
+                       incr.status_code == 200
+                       and incr_json.get("status") == "reindexed_incremental"
+                       and incr_json.get("chunks", 0) > 0
+                       and incr_json.get("index_chunks") == before_total))
+        missing = requests.post(BASE + "/reindex", json={"source": "不存在的文档.md"},
+                                headers={"X-API-Key": KEY}, timeout=60)
+        checks.append(("增量重建：找不到的来源返回 404",
+                       missing.status_code == 404))
+
         stats_no_key = requests.get(BASE + "/stats", timeout=30)
         checks.append(("内部指标 /stats 要鉴权（401）", stats_no_key.status_code == 401))
 
