@@ -7,10 +7,36 @@ spring:
     name: offeragent-api
   jackson:
     default-property-inclusion: non_null
+  datasource:
+    # 本机 MySQL 8.0.29（C:\tools\mysql-8.0.29-winx64，服务 MySQL80）
+    url: jdbc:mysql://127.0.0.1:3306/offeragent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: ${MYSQL_USER:offeragent}
+    password: ${MYSQL_PASSWORD:offeragent123}
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 3000
+  jpa:
+    hibernate:
+      ddl-auto: update          # 开发期自动建表；生产环境应换成 Flyway/Liquibase 版本化脚本
+    open-in-view: false         # 关掉 OSIV：避免把数据库连接一直攥到视图渲染完
+    properties:
+      hibernate:
+        format_sql: false
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+      repositories:
+        enabled: false     # 只用 RedisTemplate/缓存，不用 Redis Repository（否则 JPA 接口会被它扫描并告警）
+  cache:
+    type: redis
 
 offeragent:
   # 岗位库数据目录（相对 java-api 目录；也可以用环境变量 OFFERAGENT_JDS_DIR 覆盖）
   jds-dir: ${OFFERAGENT_JDS_DIR:../offeragent/data/jds}
+  # 每个 IP 每分钟的请求上限（0 = 关闭限流）
+  rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:30}
 
 rag:
   # Python 检索服务（RAG v3）。它没起时 /api/health 会报 down，但本服务仍能提供 /api/jobs

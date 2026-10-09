@@ -30,11 +30,11 @@ public class ApiController {
 
     private static final Logger log = LoggerFactory.getLogger(ApiController.class);
 
-    private final JobRepository jobs;
+    private final JobService jobs;
     private final RestClient rag;
     private final String ragApiKey;
 
-    public ApiController(JobRepository jobs,
+    public ApiController(JobService jobs,
                          @Value("${rag.base-url:http://127.0.0.1:8600}") String ragBaseUrl,
                          @Value("${rag.api-key:}") String ragApiKey) {
         this.jobs = jobs;
@@ -60,25 +60,33 @@ public class ApiController {
         } catch (Exception e) {
             downstream = "down:" + e.getClass().getSimpleName();
         }
+        Map<String, Object> stats;
+        String dbStatus = "ok";
+        try {
+            stats = jobs.stats();                 // 走 MySQL，结果进 Redis 缓存
+        } catch (Exception e) {
+            dbStatus = "down:" + e.getClass().getSimpleName();
+            stats = Map.of();
+        }
         return Map.of(
                 "service", "offeragent-api",
                 "status", "up",
                 "javaVersion", System.getProperty("java.version"),
+                "mysql", dbStatus,
+                "jobStats", stats,
                 "pythonAiService", downstream,
                 "time", OffsetDateTime.now().toString());
     }
 
-    /** 查询岗位库，可按最低匹配分过滤（业务接口，不碰模型）。 */
+    /** 查询岗位库（MySQL + Redis 缓存），可按最低匹配分过滤（业务接口，不碰模型）。 */
     @GetMapping("/jobs")
     public Map<String, Object> listJobs(
             @RequestParam(name = "minScore", defaultValue = "0") int minScore,
             @RequestParam(name = "limit", defaultValue = "20") @Min(1) @Max(100) int limit) {
-        List<Job> all = jobs.findAll();
-        List<Job> filtered = all.stream()
-                .filter(j -> j.score() >= minScore)
-                .limit(limit)
-                .toList();
-        return Map.of("total", all.size(), "returned", filtered.size(), "jobs", filtered);
+        List<Job> list = jobs.list(minScore, limit);
+        return Map.of("total", jobs.stats().getOrDefault("total", 0),
+                      "returned", list.size(),
+                      "jobs", list);
     }
 
     /** RAG 检索：校验入参后转发给 Python 服务（AI 能力不在 Java 侧重写）。 */

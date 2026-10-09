@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -21,20 +22,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 这类"状态码语义错"的 bug 只有断言状态码才能守住。
  */
 @WebMvcTest(ApiController.class)
-@Import(ApiController.class)
+@Import({ApiController.class, WebConfig.class, RateLimitInterceptor.class})
 class ApiControllerTest {
 
     @Autowired
     private MockMvc mvc;
 
     @MockBean
-    private JobRepository jobs;
+    private JobService jobs;
+
+    // 限流拦截器依赖 Redis；切片测试里给它一个 mock，让 preHandle 走降级分支（放行）
+    @MockBean
+    private StringRedisTemplate redis;
 
     @Test
     void 岗位查询按分数过滤并返回总数() throws Exception {
-        given(jobs.findAll()).willReturn(List.of(
-                new Job("job-a", "Agent 开发", "某公司", "南京", "300/天", 88, "待投", "https://example.com/a"),
-                new Job("job-b", "AI 应用", "另一家公司", "南京", "", 50, "待投", "")));
+        given(jobs.list(80, 10)).willReturn(List.of(
+                new Job("job-a", "Agent 开发", "某公司", "南京", "300/天", 88, "待投", "https://example.com/a")));
+        given(jobs.stats()).willReturn(java.util.Map.of("total", 2, "avgScore", 69, "scoreOver80", 1));
 
         mvc.perform(get("/api/jobs").param("minScore", "80").param("limit", "10"))
            .andExpect(status().isOk())

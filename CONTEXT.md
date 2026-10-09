@@ -151,6 +151,18 @@
    - **CI 抓到平台相关真 bug（很有价值的教训）**：增量重建在 Linux 上仍重复入库（654 → 658 块）。原因是我上一轮的兜底匹配写成 `replace("/", "\\\\")` 后再 `os.path.basename` —— **Windows 上对、Linux 上等于没匹配**。修法：新增跨平台 `store.source_key()`（手动按两种分隔符 rsplit），并加"5 种路径形态归到同一个 key"的断言。本地 8/8、18/18，**CI run #48 四个 job 全绿**（offline / java-api / service / docker）
    - **副产品**：`tools/push_to_github.py` 现在会在检测到本地代理时自动走它（旧通道留作备用）
 
+29. **2026-10-09 java-api 接上 MySQL + Redis（后端数据层补齐）**
+   - **环境**：MySQL 8.0.29（`C:\tools\mysql-8.0.29-winx64`，服务 `MySQL80`，端口 3306，root 密码 `root`）
+     与 Redis 5.0.14.1（`C:\tools\redis-server.exe`，服务 `Redis`，6379）**早前已装好并留了说明**（`C:\tools\README-MySQL-Redis.md`），只需连通即可，无需重装
+   - **建库建号**：`offeragent` 库（utf8mb4）+ 专用账号 `offeragent/offeragent123`（不给应用用 root）
+   - **java-api 数据层**：`JobEntity`（岗位名做主键 → 导入幂等）+ `JobDbRepository`（JPA 派生查询/统计）+ `JobSeeder`（表为空时从 JSON 导入，22 行）+ `JobService`（`@Cacheable` 走 Redis）
+   - **缓存实测**：同一请求第 1 次 464ms（日志"查 MySQL：minScore=80 limit=3（没走缓存）"）→ 第 2 次 **51ms**（无 SQL 日志 = 命中 Redis）；`jobs::80:3` TTL 60s、`jobStats::all` TTL 15s，值是可读 JSON
+   - **限流实测**：`RateLimitInterceptor` 用 Redis INCR 做固定窗口（上限 5/分钟时第 6 次 → **429 + Retry-After: 28** + `X-RateLimit-*` 头）；Redis 挂掉时降级放行并打日志
+   - **踩到并修掉 3 个坑**（都已写进 README 与注释）：① 漏 `@EnableCaching` → 启动报 `required a bean of type CacheManager`；② 缓存值用 JDK 序列化 → `SerializationException`（record 不可序列化）；③ 换成 JSON 序列化后又因为 `Map.of()/.toList()` 这类 **JDK 不可变集合**无法反序列化而 500 → 改成标准 `HashMap/ArrayList`
+   - **测试**：`mvn test` **7/7**（3 接口切片 + 4 限流单测：未超限放行带剩余额度头 / 超限 429 带 Retry-After / Redis 挂降级放行 / XFF 取第一段）
+   - **简历**：技能加「后端与数据（Java）：SpringBoot 3/JDK 21、JPA+Hibernate、MySQL、Redis、REST 设计」；API 层 bullet 补上 MySQL 迁移、缓存提速 464ms→51ms、Redis 限流 429。**仍是 1 页**
+   - **仍未做（如实）**：对外鉴权（Spring Security + API Key）、集成测试进 CI（需 Testcontainers）、`ddl-auto` 换 Flyway、Java 侧 Dockerfile
+
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`
