@@ -144,6 +144,13 @@
    - **CI 扩到 4 个 job**：offline / service / **java-api（temurin 21 + mvn test）** / docker，YAML 解析通过
    - **仍未做（如实）**：本机没有 MySQL / Redis / Docker → JDBC+连接池、Redis 缓存与限流、Java 侧 Dockerfile 都还没做；这就是简历里没写 MySQL/Redis 的原因
 
+28. **2026-10-09 ⭐ 找到 git push 长期不通的根因并修好（重大）**
+   - **根因**：系统装了代理（`127.0.0.1:7897`，Clash 类），浏览器走代理所以能上 GitHub；但 **git 和我的 Python 脚本都没走代理**，直连 `github.com:443` 的 TLS 被重置（TCP 能连上、握手被掐 → `Recv failure: Connection was reset`；`api.github.com` 时通时断）。之前 CONTEXT 里"git 443 长期不通"的记录到此结案
+   - **修法**：给本仓库写仓库级代理配置 `git config --local http.proxy http://127.0.0.1:7897`。之后 `git push` 直接可用（实测 `79d7d41..436b55f`、`436b55f..dd8f344` 两次成功）。要全局生效：`git config --global http.proxy http://127.0.0.1:7897`（代理关了会连不上，可 `--unset` 撤销）
+   - **顺带解决历史分叉**：远端 master 上有 24 条"按文件同步"产生的提交（`sync(<sha>): <file>`），与本地真实提交历史分叉。核对**远端独有文件数 = 0** 后，用 `git merge -s ours origin/master` 把远端历史并回主线（内容以本地为准），既保住提交历史又能 fast-forward
+   - **CI 抓到平台相关真 bug（很有价值的教训）**：增量重建在 Linux 上仍重复入库（654 → 658 块）。原因是我上一轮的兜底匹配写成 `replace("/", "\\\\")` 后再 `os.path.basename` —— **Windows 上对、Linux 上等于没匹配**。修法：新增跨平台 `store.source_key()`（手动按两种分隔符 rsplit），并加"5 种路径形态归到同一个 key"的断言。本地 8/8、18/18，**CI run #48 四个 job 全绿**（offline / java-api / service / docker）
+   - **副产品**：`tools/push_to_github.py` 现在会在检测到本地代理时自动走它（旧通道留作备用）
+
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`

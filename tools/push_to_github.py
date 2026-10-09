@@ -10,6 +10,11 @@
     python tools/push_to_github.py --base b633e78   指定对比的远端基点
 
 凭据：从 Windows 凭据管理器读（git credential fill），不落盘、不打印。
+
+代理：这台机器直连 github.com 会被重置（TCP 通、TLS 握手被掐），必须走系统代理。
+脚本会自动探测常见的本地代理端口（127.0.0.1:7897/7890 等）并用它；也可以用
+$env:HTTPS_PROXY 显式指定。**优先用 `git push`**（已配好仓库级 http.proxy），
+本脚本留作历史分叉/单文件同步时的备用通道。
 """
 import argparse
 import base64
@@ -62,6 +67,28 @@ def token():
     return tok, fields.get("username", "")
 
 
+def _auto_proxy():
+    """探测本地代理；直连 github 会被重置，走代理才通。
+
+    返回 proxies dict（给 requests 用）或 None。只在没显式设置 HTTPS_PROXY 时探测。
+    """
+    if os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy"):
+        return None
+    import socket
+    for port in (7897, 7890, 7891, 10809, 10808):
+        s = socket.socket()
+        s.settimeout(0.4)
+        try:
+            s.connect(("127.0.0.1", port))
+            return {"http": "http://127.0.0.1:%d" % port,
+                    "https": "http://127.0.0.1:%d" % port}
+        except Exception:
+            continue
+        finally:
+            s.close()
+    return None
+
+
 def api(method, path, tok, body=None, raw=False):
     if path.startswith("http"):
         url = path
@@ -70,6 +97,11 @@ def api(method, path, tok, body=None, raw=False):
         p, _, q = path.partition("?")
         url = API + urllib.parse.quote(p, safe="/") + (("?" + q) if q else "")
     data = json.dumps(body).encode() if body is not None else None
+    # 直连被重置时自动切到本地代理（urllib 会读 *_PROXY 环境变量）
+    px = _auto_proxy()
+    if px:
+        os.environ.setdefault("HTTPS_PROXY", px["https"])
+        os.environ.setdefault("HTTP_PROXY", px["http"])
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", "Bearer " + tok)
     req.add_header("Accept", "application/vnd.github+json")
