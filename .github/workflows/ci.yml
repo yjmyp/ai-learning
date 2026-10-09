@@ -50,11 +50,15 @@ jobs:
           HF_HUB_OFFLINE: "0"
           TRANSFORMERS_OFFLINE: "0"
           RAG2_CHROMA_DIR: ${{ runner.temp }}/chroma
+          # CI 不依赖私人语料（学习笔记/ 已不入库），改用仓库自身的公开文档当语料：
+          # 这样测试自包含，也不会把你的笔记推到公开仓库。
+          RAG2_DOCS_DIRS: ${{ github.workspace }}/interview-prep:${{ github.workspace }}/offeragent/docs:${{ github.workspace }}/java-api
         run: python rag2/build_index.py
       - name: 服务生产化验收（鉴权/限流/探针/结构化错误 13 项）
         env:
           SERVICE_RATE_LIMIT: "3"
           RAG2_CHROMA_DIR: ${{ runner.temp }}/chroma
+          RAG2_DOCS_DIRS: ${{ github.workspace }}/interview-prep:${{ github.workspace }}/offeragent/docs:${{ github.workspace }}/java-api
         run: python rag2/test_service_prod.py
 
   # ---------- 镜像档：真 docker build + 起容器 + 打探针（重，按需跑） ----------

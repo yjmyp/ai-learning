@@ -46,9 +46,9 @@ def wait_up(timeout=300):
 
 def main():
     env = dict(os.environ)
-    # 额度算清楚：带 key 的请求依次是 正常/非法mode/超长q/top_k越界（4 次），
-    # 所以上限给 6，留出余量后再用循环把额度打爆触发 429（避免测试和限流互相打架）
-    env.update({"SERVICE_API_KEY": KEY, "SERVICE_RATE_LIMIT": "6",
+    # 额度算清楚：带 key 的请求依次是 正常/非法mode/超长q/top_k越界/stats/reindex/找不到的来源（7 次），
+    # 上限给 10 留余量，最后再用循环把额度打爆触发 429（避免测试和限流互相打架）
+    env.update({"SERVICE_API_KEY": KEY, "SERVICE_RATE_LIMIT": "10",
                 "SERVICE_RATE_WINDOW": "60", "SERVICE_WARMUP": "1"})
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "service:app", "--port", str(PORT)],
@@ -76,8 +76,10 @@ def main():
                        lv.status_code == 200 and live_ms < 500
                        and "uptime_s" in lv.json()))
         rd = requests.get(BASE + "/ready", timeout=60)
-        checks.append(("就绪探针 /ready 索引非空返回 200",
-                       rd.status_code == 200 and rd.json().get("index_chunks", 0) > 100))
+        # 阈值故意放低：CI 用仓库里的公开文档当语料（不依赖私人笔记），块数比本地少，
+        # 这里只需要证明"索引真的建起来了、服务能接流量"。
+        checks.append(("就绪探针 /ready 索引非空返回 200（%s 块）" % rd.json().get("index_chunks"),
+                       rd.status_code == 200 and rd.json().get("index_chunks", 0) > 10))
 
         no_key = requests.post(BASE + "/search", json={"q": "RAG"}, timeout=30)
         checks.append(("无 key 调 /search 被拒（401）", no_key.status_code == 401))
@@ -105,7 +107,13 @@ def main():
 
         # 增量重建：传 source 只重算这一篇，全库块数不变（不用等整库重建几分钟）
         before_total = requests.get(BASE + "/ready", timeout=60).json().get("index_chunks")
-        incr = requests.post(BASE + "/reindex", json={"source": "大模型入门.txt"},
+        # 语料名不能写死：本地跑用的是学习笔记，CI 用的是仓库公开文档。
+        # 所以从 /stats 里取一个"当前库里真实存在"的来源来测。
+        st_json = requests.get(BASE + "/stats", headers={"X-API-Key": KEY}, timeout=60).json()
+        top_src = (st_json.get("top_sources") or [["", 0]])[0][0]
+        src_name = top_src.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+        print("   增量重建测试用的来源：%s" % src_name)
+        incr = requests.post(BASE + "/reindex", json={"source": src_name},
                              headers={"X-API-Key": KEY}, timeout=300)
         incr_json = incr.json() if incr.status_code == 200 else {}
         checks.append(("增量重建端点：按来源重算且不动全库（%s → %s）"
