@@ -73,13 +73,16 @@ def _summary_html(content) -> str:
 def _project_html(p, show_result=True) -> str:
     bullets = "".join(f"<li>{b}</li>" for b in p["bullets"])
     res = f'<div class="result">{p["result"]}</div>' if show_result else ""
+    # 项目介绍行：先说清"这东西是干什么用的"，再放量化结果。
+    # 只有结果没有背景，读的人（尤其非技术的 HR）不知道这个项目在解决什么问题。
+    intro = f'<div class="intro">{p["intro"]}</div>' if p.get("intro") else ""
     # 技术栈写成一行纯文本：标签胶囊颜色多显乱，而且 PDF / ATS 解析时
     # 相邻 span 之间会丢分隔符（实测抽出成 "APIStreamlit" 这种粘连文本）。
     tech = " · ".join(s.strip() for s in re.split(r"[｜|·]", p["tech"]) if s.strip())
     return (f'<div class="proj"><div class="proj-head">'
             f'<span class="proj-title">{p["title"]}</span>'
             f'<span class="proj-date">{p["date"]}</span></div>'
-            f'{res}<div class="tech">{tech}</div>'
+            f'{intro}{res}<div class="tech">{tech}</div>'
             f"<ul>{bullets}</ul></div>")
 
 
@@ -339,6 +342,9 @@ def to_markdown(content=None) -> str:
     for p in c["projects"]:
         lines.append(f"### {p['title']}　{p.get('date', '')}")
         lines.append("")
+        if p.get("intro"):
+            lines.append(p["intro"])
+            lines.append("")
         lines.append(p["result"].replace("<b>", "**").replace("</b>", "**"))
         lines.append("")
         lines.append(f"技术栈：{p['tech']}")

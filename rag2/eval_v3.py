@@ -90,6 +90,15 @@ def pct(a, b):
     return (100.0 * a / b) if b else 0.0
 
 
+def _index_sources(engine) -> int:
+    """索引里实际有多少篇来源（按 chunk 的 source 元数据去重）。"""
+    try:
+        data = engine.store.get_all()
+        return len({(m or {}).get("source", "") for m in data["metadatas"] if m})
+    except Exception:
+        return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--modes", default=",".join(ALL_MODES))
@@ -157,8 +166,13 @@ def main():
              "%d 条可回答问题（每条绑定 ground-truth 块 id）+ %d 条库外问题"
              "（%d 条明显跨领域 + %d 条难负例，测拒答）。"
              % (n_ans, n_no + len(hard), n_no, len(hard)),
-             "> 索引：%d 块 / %d 篇资料。命中判据 = 期望块出现在 top-k（不靠关键词猜）。"
-             % (engine.store.count(), len(set(it["source"] for it in items if it["source"]))),
+            # 注意：这里过去写的是"评估集覆盖到的来源数"，不是索引里的语料总数，
+            # 两者会差（评估集没覆盖到某个来源时，看起来就像语料少了一篇）。
+            # 现在两个数都写清楚。
+            "> 索引：%d 块 / %d 篇资料（其中评估集覆盖 %d 篇）。"
+            "命中判据 = 期望块出现在 top-k（不靠关键词猜）。"
+            % (engine.store.count(), _index_sources(engine),
+               len(set(it["source"] for it in items if it["source"]))),
              "",
              "| 模式 | R@1 | R@3 | R@5 | MRR | 拒答准确 | 难负例拒答 | 误拒 | P50 延迟 | P95 延迟 | P99 延迟 | 候选块 |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
