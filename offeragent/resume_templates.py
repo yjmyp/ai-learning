@@ -73,25 +73,39 @@ def _summary_html(content) -> str:
 def _project_html(p, show_result=True) -> str:
     bullets = "".join(f"<li>{b}</li>" for b in p["bullets"])
     res = f'<div class="result">{p["result"]}</div>' if show_result else ""
-    # 技术栈拆成小标签，比一整行竖线好看，也更容易扫
-    chips = "".join(f'<span class="chip">{s.strip()}</span>'
-                    for s in re.split(r"[｜|·]", p["tech"]) if s.strip())
+    # 技术栈写成一行纯文本：标签胶囊颜色多显乱，而且 PDF / ATS 解析时
+    # 相邻 span 之间会丢分隔符（实测抽出成 "APIStreamlit" 这种粘连文本）。
+    tech = " · ".join(s.strip() for s in re.split(r"[｜|·]", p["tech"]) if s.strip())
     return (f'<div class="proj"><div class="proj-head">'
             f'<span class="proj-title">{p["title"]}</span>'
             f'<span class="proj-date">{p["date"]}</span></div>'
-            f'{res}<div class="tech">{chips}</div>'
+            f'{res}<div class="tech">{tech}</div>'
             f"<ul>{bullets}</ul></div>")
 
 
+def _section_blocks(c, projects_html: str) -> str:
+    """所有模板共用的区块与顺序：概述 → 教育背景 → 专业技能 → 项目经历。
+
+    应届简历的通行顺序是把教育放前面；之前每个模板各写一份、顺序还不一致，
+    同一份内容在不同模板里教育/项目的位置会变，属于"看起来乱"的来源之一。
+    """
+    return (f'{_summary_html(c)}'
+            f'<h2>教育背景</h2><div class="meta">{c["education"]}</div>'
+            f'<h2>专业技能</h2><div class="skills">{_skills_html(c)}</div>'
+            f'<h2>项目经历</h2>{projects_html}')
+
+
 def _skills_html(content) -> str:
-    return "".join(f"<div><b>{k}</b>{v}</div>" for k, v in content["skills"])
+    # 组名和内容之间加分隔符：不加的话 PDF 文字层会抽成「编程语言Python（主力…）」
+    return "".join(f"<div><b>{k}</b>：{v}</div>" for k, v in content["skills"])
 
 
 def _notes_html(content) -> str:
     return "".join(f"<li>{n}</li>" for n in content["notes"])
 
 
-FOOT = '<div class="foot">本简历由本人独立撰写，项目与数据均可验证。</div>'
+# 尾注已删除：正式简历不写"本简历由本人独立撰写"这类自我辩解句，
+# 占版面还显得心虚。可验证性靠链接和数字本身说话。
 
 
 def _doc(title: str, css: str, body: str) -> str:
@@ -116,16 +130,7 @@ def render_classic(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
-  {summary}
-  <h2>项目经历</h2>
-  {projects}
-  <h2>教育背景</h2>
-  <div class="meta">{c["education"]}</div>
-  <h2>技能</h2>
-  <div class="skills">{_skills_html(c)}</div>
-  <h2>求职说明</h2>
-  <ul class="note">{_notes_html(c)}</ul>
-  {FOOT}
+  {_section_blocks(c, projects)}
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_CLASSIC, body)
 
@@ -144,19 +149,16 @@ def render_sidebar(content=None, photo_uri: str = "") -> str:
     <div class="meta">{side_meta}</div>
     <h3>技能</h3>
     <div class="skill meta">{side_skills}</div>
-    <h3>求职说明</h3>
-    <ul class="meta">{side_notes}</ul>
   </div>
   <div class="main">
     <h1>{c["name"]}</h1>
     <div class="role">{c["role"]}</div>
     <div class="links">{_links_html(c)}</div>
     {summary}
-    <h2>项目经历</h2>
-    {projects}
     <h2>教育背景</h2>
     <div class="meta">{c["education"]}</div>
-    {FOOT}
+    <h2>项目经历</h2>
+    {projects}
   </div>
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_SIDEBAR, body)
@@ -176,16 +178,7 @@ def render_compact(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
-  {summary}
-  <h2>项目经历</h2>
-  {projects}
-  <h2>教育背景</h2>
-  <div class="meta">{c["education"]}</div>
-  <h2>技能</h2>
-  <div class="skills">{_skills_html(c)}</div>
-  <h2>求职说明</h2>
-  <ul class="note">{_notes_html(c)}</ul>
-  {FOOT}
+  {_section_blocks(c, projects)}
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_COMPACT, body)
 
@@ -198,13 +191,12 @@ def render_timeline(content=None, photo_uri: str = "") -> str:
     for p in c["projects"]:
         bullets = "".join(f"<li>{b}</li>" for b in p["bullets"])
         res = f'<div class="result">{p["result"]}</div>'
-        chips = "".join(f'<span class="chip">{s.strip()}</span>'
-                        for s in re.split(r"[｜|·]", p["tech"]) if s.strip())
+        tech = " · ".join(s.strip() for s in re.split(r"[｜|·]", p["tech"]) if s.strip())
         items.append(
             f'<div class="tl-item"><div class="tl-head">'
             f'<span class="tl-title">{p["title"]}</span>'
             f'<span class="tl-date">{p["date"]}</span></div>'
-            f'{res}<div class="tech">{chips}</div><ul>{bullets}</ul></div>')
+            f'{res}<div class="tech">{tech}</div><ul>{bullets}</ul></div>')
     body = f"""<div class="page">
   <div class="head">
     <div class="head-main">
@@ -215,16 +207,7 @@ def render_timeline(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
-  {summary}
-  <h2>项目经历</h2>
-  <div class="tl">{"".join(items)}</div>
-  <h2>教育背景</h2>
-  <div class="meta">{c["education"]}</div>
-  <h2>技能</h2>
-  <div class="skills">{_skills_html(c)}</div>
-  <h2>求职说明</h2>
-  <ul class="note">{_notes_html(c)}</ul>
-  {FOOT}
+  {_section_blocks(c, '<div class="tl">' + "".join(items) + "</div>")}
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_TIMELINE, body)
 
@@ -245,16 +228,7 @@ def render_band(content=None, photo_uri: str = "") -> str:
     {_photo_box(photo_uri)}
   </div>
   <div class="body">
-    {summary}
-    <h2>项目经历</h2>
-    {projects}
-    <h2>教育背景</h2>
-    <div class="meta">{c["education"]}</div>
-    <h2>技能</h2>
-    <div class="skills">{_skills_html(c)}</div>
-    <h2>求职说明</h2>
-    <ul class="note">{_notes_html(c)}</ul>
-    {FOOT}
+    {_section_blocks(c, projects)}
   </div>
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_BAND, body)
@@ -277,16 +251,13 @@ def render_modern(content=None, photo_uri: str = "") -> str:
     </div>
     {_photo_box(photo_uri)}
   </div>
-  {summary}
-  <h2>项目经历</h2>
-  {projects}
+  {_summary_html(c)}
   <h2>教育背景</h2>
   <div class="meta">{c["education"]}</div>
-  <h2>技能</h2>
+  <h2>专业技能</h2>
   <div class="skills">{skill_tags}</div>
-  <h2>求职说明</h2>
-  <ul class="note">{_notes_html(c)}</ul>
-  {FOOT}
+  <h2>项目经历</h2>
+  {projects}
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_MODERN, body)
 
@@ -304,11 +275,10 @@ def render_duo(content=None, photo_uri: str = "") -> str:
     <h1>{c["name"]}</h1>
     <div class="role">{c["role"]}</div>
     {summary}
-    <h2>项目经历</h2>
-    {projects}
     <h2>教育背景</h2>
     <div class="meta">{c["education"]}</div>
-    {FOOT}
+    <h2>项目经历</h2>
+    {projects}
   </div>
   <div class="side">
     {_photo_box(photo_uri)}
@@ -316,8 +286,6 @@ def render_duo(content=None, photo_uri: str = "") -> str:
     <div class="meta">{side_meta}</div>
     <h3>技能</h3>
     <div class="skill meta">{side_skills}</div>
-    <h3>求职说明</h3>
-    <ul class="meta">{side_notes}</ul>
   </div>
 </div>"""
     return _doc(f'{c["name"]}-简历', CSS_DUO, body)
@@ -357,6 +325,12 @@ def to_markdown(content=None) -> str:
         lines.append("；".join(f"{label}：{url}" for label, url in c["links"]))
     lines += ["", "## 个人概述", ""]
     lines += [c.get("summary", "")]
+    lines += ["", "## 教育背景", ""]
+    lines.append(c["education"].replace("<b>", "**").replace("</b>", "**")
+                 .replace("<br>", "；"))
+    lines += ["", "## 专业技能", ""]
+    for k, v in c["skills"]:
+        lines.append(f"- **{k}**：{v}")
     lines += ["", "## 项目经历", ""]
     for p in c["projects"]:
         lines.append(f"### {p['title']}　{p.get('date', '')}")
@@ -367,15 +341,8 @@ def to_markdown(content=None) -> str:
         for b in p["bullets"]:
             lines.append("- " + b.replace("<b>", "**").replace("</b>", "**"))
         lines.append("")
-    lines.append("## 教育背景")
-    lines.append(c["education"].replace("<b>", "**").replace("</b>", "**")
-                 .replace("<br>", "；"))
-    lines += ["", "## 技能", ""]
-    for k, v in c["skills"]:
-        lines.append(f"- **{k}**：{v}")
-    lines += ["", "## 求职说明", ""]
-    lines += [f"- {n}" for n in c["notes"]]
-    lines += ["", "> 本简历由本人独立撰写，项目与数据均可验证。"]
+    for n in c.get("notes") or []:
+        lines.append(f"> {n}")
     return "\n".join(lines)
 
 

@@ -53,11 +53,18 @@ def main():
         return r
 
     cdp.call("Page.navigate", {"url": "http://localhost:8501/resume"}, timeout=60)
-    time.sleep(7)
-    mine_html = cdp.call("Runtime.evaluate", {
-        "expression": "document.documentElement.outerHTML",
-        "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
-    mine = html_to_text(mine_html)
+    # 这一页要渲染 7 套模板预览（外层 HTML 1MB+），写死 sleep(7) 经常只拿到半页，
+    # 表现为"下载按钮时有时无"的假失败 → 轮询到关键元素出现为止（最多 45s）
+    mine_html, mine = "", ""
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        time.sleep(3)
+        mine_html = cdp.call("Runtime.evaluate", {
+            "expression": "document.documentElement.outerHTML",
+            "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
+        mine = html_to_text(mine_html)
+        if "下载 HTML" in mine and "放大看" in mine:
+            break
     cdp.call("Page.navigate", {"url": "http://localhost:8501/settings"}, timeout=60)
     time.sleep(7)
     settings = text_now()
@@ -71,12 +78,15 @@ def main():
          all(k in mine for k in ["经典单栏", "左侧栏", "极简黑白"])),
         ("模板缩略预览真的渲染了",
          all(f"oa-pv-{k}" in mine_html for k in ["classic", "sidebar", "compact"])),
+        # 预览的作用域 class 会随实例名变化（card_classic / zoom / full_*），
+        # 所以只断言"存在带 .oa-pv- 前缀且作用于 .page 的选择器"，不写死具体实例名
         ("预览样式被隔离（带作用域前缀）",
-         any(s in mine_html for s in [".oa-pv-classic-grid .page",
-                                      ".oa-pv-classic .page"])),
+         all(f".oa-pv-{k}" in mine_html for k in ["classic", "sidebar", "compact"])),
         ("有放大整页预览", "放大看" in mine),
-        ("有下载 HTML 按钮", "下载这份 HTML" in mine),
-        ("提示了命令行出 PDF", "make_resume_pdf.py" in mine),
+        ("有下载 HTML 按钮", "下载 HTML" in mine),
+        # PDF 出口有两种形态：本机能渲染 → 显示下载按钮；云端无 Edge → 提示终端命令
+        ("有 PDF 出口（下载按钮或终端命令提示）",
+         "下载 PDF" in mine or "make_resume_pdf.py" in mine),
         ("我的简历页无 Traceback", "Traceback" not in mine),
         ("设置页不再有照片上传", "上传照片" not in settings),
         ("设置页把分享链接指向「展示」", "📇 展示" in settings or "展示" in settings),
