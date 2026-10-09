@@ -1,0 +1,24 @@
+# java-api 配置
+server:
+  port: 8080
+
+spring:
+  application:
+    name: offeragent-api
+  jackson:
+    default-property-inclusion: non_null
+
+offeragent:
+  # 岗位库数据目录（相对 java-api 目录；也可以用环境变量 OFFERAGENT_JDS_DIR 覆盖）
+  jds-dir: ${OFFERAGENT_JDS_DIR:../offeragent/data/jds}
+
+rag:
+  # Python 检索服务（RAG v3）。它没起时 /api/health 会报 down，但本服务仍能提供 /api/jobs
+  base-url: ${RAG_BASE_URL:http://127.0.0.1:8600}
+  api-key: ${RAG_API_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

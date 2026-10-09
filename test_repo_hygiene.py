@@ -88,6 +88,14 @@ def main():
     checks.append(("求职隐私数据未入库（%d 个文件）" % len(data_tracked),
                    len(data_tracked) == 0))
 
+    # 构建产物：java-api/target 里那个 jar 有 24MB，入库会把仓库撑大、且每次构建都产生 diff。
+    # 这条是被真实事故加上的（一次 git add java-api 把 target 一起提交了）。
+    junk = [t for t in files if "/target/" in t or "node_modules/" in t
+            or "__pycache__/" in t or t.endswith(".class")]
+    checks.append(("构建产物未入库（%d 个%s）"
+                   % (len(junk), "：" + ", ".join(junk[:3]) if junk else ""),
+                   len(junk) == 0))
+
     gi_path = os.path.join(ROOT, ".gitignore")
     gi = open(gi_path, encoding="utf-8", errors="ignore").read() if os.path.exists(gi_path) else ""
     missing = [p for p in MUST_IGNORE if p not in gi and p.rstrip("/") not in gi]

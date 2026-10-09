@@ -8,6 +8,10 @@ local_key.py
 rag2/data/tmp/
 # 本机临时产物（PDF 转图、OCR 切片等），不入库
 tmp/
+
+# Java 构建产物（target 里有 24MB 的 jar，入库会把仓库撑爆）
+java-api/target/
+*.class
 # rag2 运行期产物（trace 日志每次问答都在长，不该入库）
 rag2/data/trace.jsonl
 rag2/data/trace*.jsonl

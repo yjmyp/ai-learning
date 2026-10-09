@@ -132,6 +132,18 @@
    - **④ 环境盘点（Java 缺口的真实前置）**：本机**只有 Java 8 的浏览器插件 JRE，没有 JDK / javac / Maven / Gradle**，也没有 MySQL / Redis / Docker（有 Node.js）。→ 想补 Java 栈必须先装 JDK+Maven，这一条**无法在本轮完成**，需要独立排期
    - **⑤ 投递 0 → 已备好弹药**：`求职投递/今日投递清单-20261009.md`（前 5 家按现跑分排序：Calix 100 / 亚信 92 / 蚂蚁 89 / Agent开发实习 89 / Agent开发可转正 89，含 4 条现成话术 + 链接位置 + 投完立刻要做的 3 件事）。**发送仍由用户点**（红线）
 
+27. **2026-10-09 补 Java 栈：工具链 + SpringBoot 对外 API 层（java-api）**
+   - **装环境**：`winget install Apache.Maven` 报"找不到程序包"——winget 源里确实没有 Maven（只有同名无关的包）。改成从 Apache 官网下 `apache-maven-3.9.16-bin.zip` 解压到 `C:\Users\29947\tools\`。Temurin JDK 21 其实**已经装好**（`C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot`），只是 PATH 里排着老的 Oracle Java8 死桩（退出码 -1）
+   - **环境变量**（用户级，无需管理员）：`JAVA_HOME=JDK21`，用户 PATH 前置 `JDK\bin` 与 `Maven\bin`。实测**模拟新终端**下 `java -version`=21.0.12.1、`javac -version`=21.0.12.1、`mvn -v`=3.9.16 全部可用
+   - **新建 `java-api/`（SpringBoot 3.5.16 + Java 21）**：定位是"Java 壳 + Python 脑"的最小可用版——业务接口（岗位查询）在 Java 侧，AI 请求转发给 Python 检索服务
+     - 3 个接口：`GET /api/health`（含下游可达性）、`GET /api/jobs?minScore&limit`（读 `offeragent/data/jds/*.meta.json`，22 个岗位）、`POST /api/rag/search`（转发 Python，连接 3s/读 60s 超时分开配）
+     - **实测**：health 200（`pythonAiService: ok(200)`）、Java→Python 检索 200（2 条命中、mode=hybrid_rerank）、空 q → **400 带字段级说明**、topK=999 → 400、不传 topK → 默认 5 且 200
+     - **修掉一个状态码语义 bug**：下游返回 422（客户端错误）曾被统一包装成 502（服务端故障）→ 改为下游 4xx/5xx 透传状态码，只有连不上才 502。`mvn test` **3/3**（岗位过滤 + 两个参数校验用例）
+     - `java-api/README.md` 写清定位、构建运行、边界处理 4 条、已验证输出、以及**没做的**（无 MySQL/Redis/Docker/鉴权）
+   - **简历**：技能加「Java（SpringBoot 3 + REST 接口开发，JDK 21）」；OfferAgent 下加一条"对外 API 层"bullet。**仍是 1 页**（三套模板都重出了）
+   - **CI 扩到 4 个 job**：offline / service / **java-api（temurin 21 + mvn test）** / docker，YAML 解析通过
+   - **仍未做（如实）**：本机没有 MySQL / Redis / Docker → JDBC+连接池、Redis 缓存与限流、Java 侧 Dockerfile 都还没做；这就是简历里没写 MySQL/Redis 的原因
+
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`

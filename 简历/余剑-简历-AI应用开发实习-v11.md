@@ -17,7 +17,7 @@ GitHub：https://github.com/yjmyp/ai-learning ｜ OfferAgent 演示：https://ai
 
 ## 专业技能
 
-- **编程语言**：Python（主力，熟悉 FastAPI / Streamlit）、SQL；数据结构与算法（哈希、双指针、滑动窗口、链表、二叉树、DFS / BFS、二分、回溯、动态规划）
+- **编程语言**：Python（主力，熟悉 FastAPI / Streamlit）、Java（SpringBoot 3 + REST 接口开发，JDK 21）、SQL；数据结构与算法（哈希、双指针、滑动窗口、链表、二叉树、DFS / BFS、二分、回溯、动态规划）
 - **大模型应用**：RAG 全链路（文档解析 / 切分 / 向量化 / 混合召回 / 重排 / 引用生成）与检索效果评估；Agent（ReAct、Plan-and-Execute、Reflection、多 Agent 协作）；Function Calling 与参数校验；MCP 协议；Prompt 工程
 - **工程与部署**：FastAPI、Streamlit、SQLite / Chroma、Docker、Git / GitHub Actions、SSE 流式输出、线程池并发、云端部署与密钥管理、AI 辅助开发工具链（Codex / Cursor / Claude Code）
 - **计算机基础**：计算机网络、操作系统、数据库原理
@@ -36,6 +36,7 @@ GitHub：https://github.com/yjmyp/ai-learning ｜ OfferAgent 演示：https://ai
 - 坏输入不崩（原方案一次非法调用就中断）：10 个工具统一 Schema 注册表 + Plan / Reflect 节点，对 30 类正常与异常输入（非法 JSON / 未知工具 / 缺参 / 类型错 / 非对象 / 大小写与空白变体）做守卫评测，判定 30/30 正确，错误以结构化消息回填后模型自行修正重试。
 - 外发可控（投递动作不能交给模型自动执行）：自研 MCP 服务端（stdio + JSON-RPC 2.0，暴露同一套 10 个工具）；执行类工具标注 humanConfirm，投递动作始终由人确认；投递前重访岗位链接拦截失效岗位。
 - 链路闭环：15 题自我蒸馏产出结构化画像 → 岗位匹配 → 话术生成 → 半自动投递 → 面试拷问 → 复盘回写画像，用 LangGraph 状态图串起各节点，节点可单独测试。
+- 对外 API 层（Java/SpringBoot 3 + JDK 21）：把岗位查询与检索入口做成 REST 接口，AI 请求转发给 Python 服务（连接 3s / 读 60s 分开配超时）；入参在边界校验（q ≤2000 字、topK 1~50）并返回字段级 400，下游 4xx 透传状态码；3 个接口测试 0 失败。
 - 工程化：bge 向量记忆（三档降级保证离线可用）、线程池并发批量打分、调用 trace 落盘与可视化、Token 与成本计量；11 个页面按数据 / AI / UI 三层拆分，离线回归测试 0 失败，CI 覆盖单测 / 服务验收 / 镜像构建。
 
 ### RAG 检索问答服务（独立开发）　2026.07 – 2026.08
