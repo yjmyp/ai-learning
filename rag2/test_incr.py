@@ -33,6 +33,15 @@ def main():
     engine = None
     src = os.path.basename(FIXTURE)
     try:
+        # 跨平台归一：索引里的 source 有 `/`、`\`、混合三种形态，
+        # 归不到同一个 key 就会出现"删不掉旧块 → 同一篇文档入库两次"。
+        # 这条是 CI 在 Linux 上抓出来的（Windows 本地怎么写都对，Linux 全不对）。
+        from store import source_key
+        forms = ["rag/notes/x.md", "..\\rag\\notes\\x.md", "..\\rag/notes\\x.md",
+                 "/home/runner/rag/notes/x.md", "x.md"]
+        keys = {source_key(f) for f in forms}
+        checks.append(("source 归一化：5 种形态归到 1 个 key（%s）" % ",".join(keys), len(keys) == 1))
+
         write("# 增量索引测试\n\n第一版内容：只讲一个很简单的主题，用来验证切块数量。\n" * 8)
         base = index_incr.get_engine().store.count()
         n1 = index_incr.add_file(FIXTURE, verbose=False)

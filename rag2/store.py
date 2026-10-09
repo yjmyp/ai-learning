@@ -4,6 +4,20 @@ from chromadb import PersistentClient
 from chromadb.config import Settings
 
 
+def source_key(source) -> str:
+    """把 source 归一成"只看文件名"的键，用于跨平台匹配。
+
+    为什么不用 os.path.basename：索引里存的 source 时而是 `rag/notes/x.md`（Linux 全量建库），
+    时而是 `..\\rag\\notes\\x.md`（Windows 增量），还有 `..\\rag/notes\\x.md` 这种混合形态。
+    os.path.basename 只认当前平台的分隔符，所以：
+      · 在 Windows 上把 "/" 换成 "\\" 再 basename 能work；
+      · 在 Linux 上这么写反而把 "/" 换没了，basename 拿到整串 → 匹配失败 → 重复入库。
+    这个函数（手动按两种分隔符切）在两边都对。CI 上就是因为这个平台差异挂过。
+    """
+    s = str(source or "").strip().lower().replace("\\", "/").rstrip("/")
+    return s.rsplit("/", 1)[-1]
+
+
 class VectorStore:
     def __init__(self, path, collection_name):
         self.client = PersistentClient(
@@ -61,20 +75,17 @@ class VectorStore:
             n = before - self.collection.count()
             if n:
                 return n
-            # 回退：按**文件名**匹配。
-            # 踩过的坑：全量建库写进索引的 source 是 `rag\notes\x.md`，
-            # 而增量时 load_documents 给的是 `..\rag\notes\x.md`——两条路径指向同一个文件，
-            # 精确匹配删不掉，于是同一篇文档被重复写进索引（库里 4 块变 8 块，
-            # 检索时同一段内容命中两次）。所以这里按 basename 兜底。
-            import os as _os
-            want = _os.path.basename(str(source or "").replace("/", "\\").strip().lower())
+            # 回退：按**文件名**匹配（跨平台，见 source_key 的说明）。
+            # 踩过的坑：全量建库写进索引的 source 与增量时算出的 source 不是同一个字符串，
+            # 精确匹配删不掉旧块，于是同一篇文档被重复写进索引（检索时同一段内容命中两次）。
+            want = source_key(source)
             if not want:
                 return 0
             data = self.get_all()
             targets = set()
             for m in data.get("metadatas") or []:
                 s = str((m or {}).get("source", ""))
-                if _os.path.basename(s.replace("/", "\\").strip().lower()) == want:
+                if source_key(s) == want:
                     targets.add(s)
             for s in targets:
                 self.collection.delete(where={"source": s})
@@ -87,11 +98,9 @@ class VectorStore:
 
         返回 {文件名: [source1, source2, ...]}，只列出重复的。
         """
-        import os as _os
         data = self.get_all()
         groups = {}
         for m in data.get("metadatas") or []:
             s = str((m or {}).get("source", ""))
-            key = _os.path.basename(s.replace("/", "\\").strip().lower())
-            groups.setdefault(key, set()).add(s)
+            groups.setdefault(source_key(s), set()).add(s)
         return {k: sorted(v) for k, v in groups.items() if len(v) > 1}
