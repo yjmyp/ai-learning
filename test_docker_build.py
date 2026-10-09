@@ -110,6 +110,16 @@ def main():
         checks.append(("OfferAgent 镜像真构建并打 Streamlit 健康检查", oa_res[0]))
         if not oa_res[0]:
             print("  [OfferAgent 失败详情] " + oa_res[1])
+        # java-api 这里只验"能构建"：单独跑容器需要 MySQL/Redis（compose 里才有），
+        # 完整运行请用 docker compose -f java-api/docker-compose.yml up --build
+        ja = sh(["docker", "build", "-f", os.path.join(ROOT, "java-api", "Dockerfile"),
+                 "-t", "offeragent-api:test", ROOT], timeout=3600)
+        checks.append(("java-api 镜像真构建（运行需 compose 起 MySQL/Redis）", ja.returncode == 0))
+        if ja.returncode != 0:
+            print("  [java-api 构建失败] " + (ja.stderr or ja.stdout)[-400:])
+        checks.append(("java-api Docker 配置静态校验",
+                       sh([sys.executable, os.path.join(ROOT, "java-api",
+                                                        "test_docker_static.py")]).returncode == 0))
 
     passed = sum(1 for _, v in checks if v is True)
     failed = [n for n, v in checks if v is False]

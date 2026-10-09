@@ -1,0 +1,18 @@
+# 构建产物与本地状态不进镜像（target 里有 60MB+ 的 jar）
+target/
+*.jar
+*.class
+
+# 本地开发机的东西
+.idea/
+.vscode/
+*.iml
+*.log
+
+# 版本控制与文档（镜像里不需要，README 保留也无妨，这里排除 .git 即可）
+.git/
+.gitignore
+README.md
+
+# 测试报告
+target/surefire-reports/

@@ -47,11 +47,13 @@ DEFAULT_CONTENT = {
                 "工具）；执行类工具标注 humanConfirm，投递动作始终由人确认；投递前重访岗位链接拦截失效岗位。",
                 "链路闭环：15 题自我蒸馏产出结构化画像 → 岗位匹配 → 话术生成 → 半自动投递 → 面试拷问 → "
                 "复盘回写画像，用 LangGraph 状态图串起各节点，节点可单独测试。",
-                "对外 API 层（Java/SpringBoot 3 + JDK 21 + MySQL + Redis）：岗位数据从 JSON 迁到 MySQL"
-                "（JPA + HikariCP，岗位名做主键让导入幂等），热点查询走 Redis 缓存——同一请求"
-                "第二次从 464ms 降到 51ms；用 Redis 计数器做每 IP 每分钟限流（超限 429 + Retry-After）；"
+                "对外 API 层（Java/SpringBoot 3 + JDK 21 + MySQL + Redis + Docker）：岗位数据从 JSON 迁到 "
+                "MySQL（JPA + HikariCP，岗位名做主键让导入幂等），热点查询走 Redis 缓存——同一请求第二次"
+                "从 464ms 降到 51ms；Redis 计数器按「API Key 哈希 + IP」限流（超限 429 + Retry-After）；"
+                "Spring Security + API Key 鉴权（缺 Key 返回 503，fail closed，定长比较防时序攻击）；"
                 "AI 请求转发给 Python 服务（连接 3s / 读 60s 分别配超时），下游 4xx 透传状态码；"
-                "7 个接口与限流单元测试 0 失败。",
+                "多阶段构建镜像 + compose 编排 MySQL/Redis（等健康再起），Docker 配置静态校验 22/22；"
+                "14 个接口 / 鉴权 / 限流测试 0 失败。",
                 "工程化：bge 向量记忆（三档降级保证离线可用）、线程池并发批量打分、调用 trace 落盘与可视化、"
                 "Token 与成本计量；11 个页面按数据 / AI / UI 三层拆分，离线回归测试 0 失败，"
                 "CI 覆盖单测 / 服务验收 / 镜像构建。",
@@ -94,7 +96,8 @@ DEFAULT_CONTENT = {
                        "AI 辅助开发工具链（Codex / Cursor / Claude Code）"),
         ("后端与数据（Java）", "SpringBoot 3 / JDK 21、Spring Data JPA + Hibernate、MySQL（建表与索引、"
                               "连接池 HikariCP、只读事务）、Redis（缓存 TTL、固定窗口限流）、"
-                              "REST 接口设计与入参校验、Maven"),
+                              "REST 接口设计与入参校验、Spring Security API Key 鉴权、"
+                              "Docker 多阶段构建与 compose 编排、Maven"),
         ("计算机基础", "计算机网络、操作系统、数据库原理"),
     ],
     "notes": [

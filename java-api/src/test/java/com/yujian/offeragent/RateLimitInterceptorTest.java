@@ -67,4 +67,23 @@ class RateLimitInterceptorTest {
         req.addHeader("X-Forwarded-For", "203.0.113.9, 10.0.0.1");
         assertThat(RateLimitInterceptor.clientIp(req)).isEqualTo("203.0.113.9");
     }
+
+    @Test
+    void 限流维度带上APIKey且不落明文() {
+        var reqA = new MockHttpServletRequest("GET", "/api/jobs");
+        reqA.addHeader("X-API-Key", "key-aaa");
+        reqA.addHeader("X-Forwarded-For", "203.0.113.9");
+        var reqB = new MockHttpServletRequest("GET", "/api/jobs");
+        reqB.addHeader("X-API-Key", "key-bbb");
+        reqB.addHeader("X-Forwarded-For", "203.0.113.9");
+
+        String a = RateLimitInterceptor.rateKeyOf(reqA);
+        String b = RateLimitInterceptor.rateKeyOf(reqB);
+
+        assertThat(a).isNotEqualTo(b);              // 同一 IP 不同调用方 → 不同配额桶
+        assertThat(a).doesNotContain("key-aaa");    // Redis key 里不能出现明文 Key
+        assertThat(a).endsWith("@203.0.113.9");
+        // 同一个 Key + 同一个 IP 必须稳定落到同一个桶
+        assertThat(RateLimitInterceptor.rateKeyOf(reqA)).isEqualTo(a);
+    }
 }

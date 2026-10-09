@@ -1,0 +1,105 @@
+# 一键起 java-api 全套依赖：docker compose -f java-api/docker-compose.yml up --build
+#
+#   mysql    5432? 不，MySQL 用 3306；数据落 named volume，容器重建不丢
+#   redis    6379
+#   java-api 8080（等 mysql/redis 健康后再起）
+#   rag      Python 检索服务（默认不启动，见文末 --profile full）
+#
+# 注意 depends_on 用的是 **condition: service_healthy**：
+# 只写 depends_on 只能保证"容器起来了"，不保证"服务能连"——MySQL 首次初始化要十几秒，
+# 不等健康检查的话 java-api 会因为连不上数据库而启动失败。
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: oa-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: offeragent
+      MYSQL_USER: offeragent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-offeragent123}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - oa-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root",
+             "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: oa-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  java-api:
+    build:
+      context: ..                 # 构建上下文是仓库根（Dockerfile 里要 COPY java-api/...）
+      dockerfile: java-api/Dockerfile
+    image: offeragent-api:latest
+    container_name: oa-java-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/offeragent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_DATASOURCE_USERNAME: offeragent
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-offeragent123}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # 密钥走环境变量注入，绝不写进镜像/仓库
+      OFFERAGENT_API_KEY: ${OFFERAGENT_API_KEY:?请通过环境变量注入 OFFERAGENT_API_KEY}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
+      RAG_BASE_URL: ${RAG_BASE_URL:-http://rag:8600}
+      # 岗位 JSON 挂进容器后从这里读（只读挂载见 volumes）
+      OFFERAGENT_JDS_DIR: /data/jds
+    ports:
+      - "8080:8080"
+    # 岗位 JSON 以只读方式挂进去：容器里的 JobSeeder 启动时导入 MySQL
+    volumes:
+      - ../offeragent/data/jds:/data/jds:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Python 检索服务（AI 能力层）。默认不启动，因为要装 CPU 版 torch（镜像大、构建慢）。
+  # 需要时：docker compose -f java-api/docker-compose.yml --profile full up --build
+  rag:
+    profiles: ["full"]
+    build:
+      context: ../rag2
+      dockerfile: Dockerfile
+    container_name: oa-rag
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-}
+      SERVICE_WARMUP: "1"
+    ports:
+      - "8600:8600"
+    volumes:
+      - ../rag2/data:/app/data
+      - ../学习笔记:/app/../学习笔记:ro
+      - ../rag/notes:/app/../rag/notes:ro
+    restart: unless-stopped
+
+volumes:
+  oa-mysql-data:

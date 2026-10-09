@@ -34,10 +34,42 @@ $env:SERVICE_WARMUP="1"; python -m uvicorn service:app --port 8600
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 本服务 + **MySQL 状态** + 岗位统计（走缓存）+ **下游 Python 服务可达性** |
-| GET | `/api/jobs?minScore=80&limit=10` | 从 **MySQL** 按匹配分查岗位（JPA），结果进 **Redis 缓存**（TTL 60s） |
-| POST | `/api/rag/search` | `{"q": "...", "topK": 5}` → 校验后转发给 Python 检索服务 |
-| GET | `/actuator/health` | Spring Boot Actuator 标准健康端点 |
+| GET | `/api/health` | 免鉴权。本服务 + **MySQL 状态** + 岗位统计（走缓存）+ **下游 Python 可达性** |
+| GET | `/api/jobs?minScore=80&limit=10` | 需 `X-API-Key`。从 **MySQL** 按匹配分查岗位（JPA），结果进 **Redis 缓存**（TTL 60s） |
+| POST | `/api/rag/search` | 需 `X-API-Key`。`{"q": "...", "topK": 5}` → 校验后转发给 Python 检索服务 |
+| GET | `/actuator/health` | 免鉴权（给部署平台探针）。Actuator 标准健康端点 |
+
+## 鉴权（2026-10-09 加）
+
+```powershell
+curl.exe http://127.0.0.1:8080/api/jobs                      # → 401 {"error":"unauthorized"}
+curl.exe -H "X-API-Key: oa-demo-key-001" http://127.0.0.1:8080/api/jobs   # → 200
+```
+
+- **为什么用 API Key 不用 JWT**：调用方是系统对系统，没有用户登录态要维护，JWT 的签发/刷新/撤销是纯负担
+- **定长比较**（`MessageDigest.isEqual`）：普通 `equals` 会在第一个不同字符处返回，能被按时序逐字节猜 Key
+- **fail closed**：没配 `OFFERAGENT_API_KEY` 时受保护接口返回 **503** 而不是放行——配置漏了却继续放行等于接口裸奔
+- **免鉴权路径**：`/api/health`、`/actuator/**`（探针要用）；`OPTIONS` 预检也放行
+- 鉴权只在这一个过滤器里做（`SecurityConfig` 里 `anyRequest().permitAll()`），避免规则分散在两处
+
+## Docker（2026-10-09 加）
+
+```bash
+# 一键起 MySQL + Redis + java-api（java-api 等前两个健康后再起）
+export OFFERAGENT_API_KEY=你的key
+docker compose -f java-api/docker-compose.yml up --build
+
+# 需要 Python AI 服务时（要装 CPU 版 torch，镜像大、构建慢）
+docker compose -f java-api/docker-compose.yml --profile full up --build
+
+# 只构建镜像
+docker build -f java-api/Dockerfile -t offeragent-api:latest .
+```
+
+- **多阶段构建**：构建阶段用 `maven:3.9-eclipse-temurin-21`，运行阶段只留 `eclipse-temurin:21-jre`；先 `COPY pom.xml` 拉依赖，源码改动不会让依赖层失效
+- **非 root 运行**（`useradd appuser`）+ `-XX:+UseContainerSupport`、`-XX:+ExitOnOutOfMemoryError`
+- **`depends_on: condition: service_healthy`**：只写 `depends_on` 只保证容器起来了，MySQL 首次初始化要十几秒，不等健康检查 java-api 会启动失败
+- **静态校验**（没 Docker 也能跑）：`python java-api/test_docker_static.py` → **22/22**，其中包含"严格 YAML 加载器查重复键"
 
 ## 数据与缓存层（2026-10-09 接入 MySQL + Redis）
 
@@ -75,15 +107,18 @@ JSON 文件（Python 侧仍在写）
 ## 已验证
 
 ```
-mvn test                                   → Tests run: 7, Failures: 0, Errors: 0
+mvn test                                   → Tests run: 14, Failures: 0, Errors: 0
+                                             （3 控制器 + 6 鉴权过滤器 + 5 限流器）
+python java-api/test_docker_static.py       → 22/22（含重复键检测；已用故意重复的 YAML 验证过它会失败）
 MySQL offeragent.job                       → 22 行 / avg 65 / 最高 88
+鉴权                                       → 无/错 Key 401；未配 Key 503（fail closed）；/api/health、/actuator/** 免鉴权
 GET  /api/health                           → 200 {"mysql":"ok",
                                              "jobStats":{"total":22,"avgScore":65,"scoreOver80":3},
                                              "pythonAiService":"ok(200)"}
 GET  /api/jobs?minScore=80&limit=3 第 1 次   → 200，464ms（日志：查 MySQL：minScore=80 limit=3（没走缓存））
 GET  /api/jobs?minScore=80&limit=3 第 2 次   → 200，51ms（无 SQL 日志 = 命中 Redis）
-Redis                                      → jobs::80:3 (TTL 60) / jobStats::all (TTL 15) / oa:ratelimit:<ip>:<min>
-限流（上限设 5/分钟）                        → 第 6 次 429 {"error":"rate_limited"} + Retry-After: 28
+Redis                                      → jobs::80:3 (TTL 60) / jobStats::all (TTL 15) / oa:ratelimit:<key哈希@ip>:<分钟>
+限流（上限设 5/分钟）                        → 第 6 次 429 {"error":"rate_limited"} + Retry-After: 28（维度 = API Key 哈希 + IP）
 POST /api/rag/search {"q":"向量检索怎么算相似度","topK":2} → 200（2 条命中，mode=hybrid_rerank）
 POST /api/rag/search {"q":"","topK":3}      → 400 bad_request（字段级说明）
 POST /api/rag/search {"q":"x","topK":999}   → 400 bad_request
@@ -91,10 +126,10 @@ POST /api/rag/search {"q":"x","topK":999}   → 400 bad_request
 
 ## 还没做（如实写）
 
-- **对外鉴权还没加**：`/api/**` 目前无 API Key 校验（Python 侧有 `X-API-Key`，转发时可选透传）。
-  下一步该上 Spring Security + API Key 过滤链，并把限流维度从"IP"细化成"API Key + IP"。
-- **集成测试没进 CI**：`mvn test` 跑的是不依赖外部服务的单元/切片测试（7 个）；
+- **只支持单 Key**：轮换要支持"多 Key + 有效期 + 灰度切换"，把 Key 从配置挪到表里并记录最后使用时间。
+- **集成测试没进 CI**：`mvn test` 跑的是不依赖外部服务的单元/切片测试（14 个）；
   连真实 MySQL/Redis 的验证目前靠本地手工执行（CI runner 上没有这两个服务）。
   要补就得用 Testcontainers 或在 CI 里起 service 容器。
 - **表结构靠 `ddl-auto=update`**：生产环境应换成 Flyway / Liquibase 版本化迁移。
-- **没有 Docker 化**：Python 侧有 Dockerfile，Java 侧还没写。
+- **没有指标与追踪**：现在只有 Actuator 健康检查，缺 Prometheus 指标与链路追踪。
+- **限流/缓存没压测**：容量数据是空的（Python 侧有压测脚本可参考）。

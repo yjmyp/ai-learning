@@ -163,6 +163,20 @@
    - **简历**：技能加「后端与数据（Java）：SpringBoot 3/JDK 21、JPA+Hibernate、MySQL、Redis、REST 设计」；API 层 bullet 补上 MySQL 迁移、缓存提速 464ms→51ms、Redis 限流 429。**仍是 1 页**
    - **仍未做（如实）**：对外鉴权（Spring Security + API Key）、集成测试进 CI（需 Testcontainers）、`ddl-auto` 换 Flyway、Java 侧 Dockerfile
 
+30. **2026-10-09 java-api 三件补齐：鉴权 + Docker + 面试故事**（用户"都做"）
+   - **① Spring Security + API Key 鉴权** `ApiKeyAuthFilter` + `SecurityConfig`：
+     - 无/错 Key → **401**；**没配 Key → 503（fail closed）**，绝不放行；`/api/health`、`/actuator/**`、`OPTIONS` 免鉴权
+     - **定长比较**（`MessageDigest.isEqual`）防时序攻击；鉴权只在一个过滤器里做（Security 侧 `anyRequest().permitAll()`），避免规则分散两处
+     - 为什么不用 JWT：调用方是系统对系统，没有用户登录态，JWT 的签发/刷新/撤销是纯负担
+   - **② 限流维度升级**：从"仅 IP"改成 **API Key 哈希 + IP**（同 IP 不同调用方不再共享额度），Key 只存 SHA-256 前 6 字节，不落明文（Redis key 运维可见）
+   - **③ Docker 化**：`java-api/Dockerfile`（多阶段：maven 构建 → JRE 运行；先 COPY pom 拉依赖让缓存生效；**非 root**；HEALTHCHECK 打 actuator；容器感知 JVM 参数）+ `docker-compose.yml`（mysql + redis + java-api，**depends_on condition: service_healthy**，数据卷持久化，API Key 必须由环境变量注入，`--profile full` 才起 Python 服务）+ `.dockerignore`（排除 target/，否则镜像塞 60MB jar）
+     - **自己写出的 bug 当场被抓**：compose 里 `java-api` 下写了**两个 `environment:` 块** → YAML 重复键"后者覆盖前者"，数据源配置被静默丢掉。修法：合并 + 在静态校验里加**严格 YAML 加载器**（自定义 constructor 遇重复键抛错），并用"故意重复的 YAML"验证过这个检查真会失败
+     - `java-api/test_docker_static.py` **22/22**；根 `test_docker_build.py` 增加 java-api 镜像真构建（CI 里跑，本地无 Docker 自动跳过）
+   - **④ 面试文档** `interview-prep/05-java-api-deep-dive.md`：30 秒/90 秒陈述、架构图、**5 个 STORY**（422 被包成 502 / 缓存序列化两连坑 / `@EnableCaching` 条件装配 / 限流降级与维度 / YAML 重复键）、**10 条高频追问**（缓存一致性、为什么不用 Redis 当库、连接池怎么定、ddl-auto 为什么不能上生产、限流为什么不放网关、API Key 轮换、多阶段构建…）、与其他项目的呼应、数字速查
+   - **测试**：`mvn test` **14/14**（3 控制器 + 6 鉴权过滤器 + 5 限流器）
+   - **简历**：技能补 Spring Security/Docker compose；API 层 bullet 补鉴权 fail-closed、限流维度、compose 编排与 22/22 静态校验。**仍是 1 页**
+   - **仍未做（如实）**：多 Key 轮换与审计、集成测试进 CI（Testcontainers）、`ddl-auto` 换 Flyway、Prometheus 指标与链路追踪、限流/缓存容量压测
+
 ## 接下来计划（2026-08-15 起，v4）
 
 > 完整方案见 `PLAN.md`（综合 30+ JD + 学习路径 + 学习方式）；每日进度见 `学习进度日志.md`

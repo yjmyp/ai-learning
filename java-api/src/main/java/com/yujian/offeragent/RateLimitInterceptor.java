@@ -42,9 +42,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         if (limitPerMinute <= 0) {
             return true;                       // 配 0 = 关闭限流
         }
-        String ip = clientIp(request);
+        String who = rateKeyOf(request);
         long minute = Instant.now().getEpochSecond() / 60;
-        String key = PREFIX + ip + ":" + minute;
+        String key = PREFIX + who + ":" + minute;
         try {
             Long n = redis.opsForValue().increment(key);
             if (n != null && n == 1L) {
@@ -62,7 +62,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                         "{\"error\":\"rate_limited\",\"message\":\"每分钟最多 %d 次，请 %d 秒后重试\"}",
                         limitPerMinute, retryAfter);
                 response.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
-                log.info("限流触发：ip={} 第 {} 次", ip, used);
+                log.info("限流触发：{} 第 {} 次", who, used);
                 return false;
             }
         } catch (Exception e) {
@@ -79,5 +79,37 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return xff.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    /**
+     * 限流维度 = API Key（哈希后）+ IP。
+     *
+     * 为什么要带 Key：只按 IP 限流会误伤——同一家公司/同一出口 NAT 出来的调用方共享 IP，
+     * 一个客户端刷爆额度，其他客户端全部 429。带上 Key 之后，配额是"按调用方"算的。
+     *
+     * 为什么存哈希不存明文：Redis 里的 key 是明文可见的（运维、监控、备份都能看到），
+     * 把 API Key 原样写进去等于多一处泄露面。哈希只需保证同 Key 映射到同一桶，不需要可逆。
+     */
+    static String rateKeyOf(HttpServletRequest request) {
+        String apiKey = request.getHeader("X-API-Key");
+        String ip = clientIp(request);
+        if (apiKey == null || apiKey.isBlank()) {
+            return "anon@" + ip;
+        }
+        return shortHash(apiKey) + "@" + ip;
+    }
+
+    private static String shortHash(String s) {
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 6; i++) {
+                sb.append(String.format("%02x", d[i]));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "h";
+        }
     }
 }
