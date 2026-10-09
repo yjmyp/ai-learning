@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """匹配分析与话术 —— OfferAgent 页面域模块（2026-09-29 从 offer_agent_app.py 拆出）"""
 import json
+import hashlib
 import os
 import re
 import time
@@ -69,7 +70,12 @@ def render_struct_score(profile, jd, meta, name, model_score=None):
         st.caption("维度权重：硬技能 0.30 / 项目证据 0.25 / 地点 0.15 / 时间 0.15 / 门槛 0.15。"
                    "一致性评估：旧法平均波动 3.31 分，结构化法 0.00 分"
                    "（见 offeragent/docs/match_consistency.md）。")
-    if st.button("💾 用结构化分覆盖岗位库里的分数", key="use_struct_" + name[:20]):
+    # key 用岗位名的哈希，不用 name[:20]：
+    #  ① 截断名字会撞车（云端岗位库里有 "Agent开发（实习生）-457029" / "Agent开发（可转正）-464651"
+    #     这类前缀相同的一批岗位）→ StreamlitDuplicateElementKey；
+    #  ② 同一个页面里同名 key 出现两次同样会崩（踩过：本页曾调用两次本函数）。
+    _key = "use_struct_" + hashlib.md5(name.encode("utf-8")).hexdigest()[:10]
+    if st.button("💾 用结构化分覆盖岗位库里的分数", key=_key):
         meta["match_score"] = res["score"]
         meta["match_method"] = res["method"]
         meta["match_dims"] = res["dims"]
@@ -136,9 +142,16 @@ def page_match():
         return
 
     # ---------- 结构化打分（v3：本地五维，可复算、可解释，不依赖模型报告） ----------
-    render_struct_score(profile, jd, meta, name)
+    # 只渲染一次：以前这里先渲染一遍、拿到模型报告后又渲染一遍，
+    # 同一个 key 在一次页面执行里出现两次 → StreamlitDuplicateElementKey（云端真实报错）。
     cache_key = f"match_{name}.md" if not name.endswith("URL直配") else None
     cached = read_text(MATCH_DIR / cache_key) if cache_key else ""
+    # 只认"当前这个岗位"的报告：换岗位后不要把上一个岗位的报告顶上来
+    if st.session_state.get("last_report_name") not in (None, name):
+        st.session_state.pop("last_report", None)
+    report_now = st.session_state.get("last_report") or cached
+    render_struct_score(profile, jd, meta, name,
+                        model_score=extract_score(report_now) if report_now else None)
     if cached:
         st.caption("已显示上次结果，点「重新匹配」可刷新（模型打分有波动，看档次不看绝对值）")
     if st.button("🔍 运行匹配分析", type="primary"):
@@ -159,14 +172,13 @@ def page_match():
                 st.error(str(e))
                 return
 
-    report = st.session_state.get("last_report") or (read_text(MATCH_DIR / cache_key) if cache_key else "")
-    if not report:
+    if not report_now:
         st.info("尚未运行匹配，点上方按钮开始")
         return
 
+    report = report_now
     score = extract_score(report)
     dims = extract_dim_scores(report)
-    render_struct_score(profile, jd, meta, name, model_score=score)
     c1, c2 = st.columns([1, 1.2])
     with c1:
         if score is not None:

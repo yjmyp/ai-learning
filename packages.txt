@@ -1,0 +1,5 @@
+# Streamlit Cloud 会读取本文件并用 apt-get 安装（无需自己写 apt 命令）
+# 用途：图片简历 OCR 依赖 opencv，而 opencv 在无桌面的 Linux 上需要这些系统库，
+# 缺了会报 "ImportError: libGL.so.1: cannot open shared object file"
+libgl1
+libglib2.0-0

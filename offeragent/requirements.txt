@@ -5,6 +5,8 @@ websocket-client>=1.8
 pypdf>=4.0
 Pillow>=10.0
 PyYAML>=6.0
-# OCR（图片简历识别）——只在本地装，云端部署可去掉，不装时该功能会提示安装
 python-docx>=1.1
-# 如需图片 OCR：python -m pip install rapidocr-onnxruntime
+# OCR（图片格式简历识别 / 简历截图）——必须装上，否则云端"上传图片简历"会报没装 OCR 组件。
+# 依赖 opencv（opencv-python），在无桌面的 Linux 上需要系统库 libGL/libglib，
+# 见仓库根目录与 offeragent/ 下的 packages.txt（Streamlit Cloud 会自动 apt 安装）。
+rapidocr-onnxruntime>=1.3
