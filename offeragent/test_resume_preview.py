@@ -104,9 +104,14 @@ def main():
         print("ℹ️ 预览里没有照片（本机 简历/照片.jpg 不存在）——放一张再测更准")
     for p in d["photos"]:
         ratio = round(p["h"] / p["w"], 3) if p["w"] else 0
-        ok = p["loaded"] and 1.3 < ratio < 1.4 and p["w"] < 200
+        # 缩略图很小（20~50px 宽），浏览器把宽高各自取整到 1px：
+        # 例如 0.42 缩放时 21.4×28.6 会量成 22×28，比例 1.273 就掉出 1.3~1.4 区间。
+        # 所以按"与 4:3 的像素偏差 ≤1.5px"判定，而不是卡死比例区间。
+        expect_h = p["w"] * 4 / 3
+        ok = p["loaded"] and abs(p["h"] - expect_h) <= 1.5 and p["w"] < 200
         print(("✅ " if ok else "❌ ")
-              + f"{p['w']}x{p['h']}（原图 {p['natW']}x{p['natH']}，比例 {ratio}）")
+              + f"{p['w']}x{p['h']}（原图 {p['natW']}x{p['natH']}，比例 {ratio}，"
+                f"4:3 期望高 {expect_h:.1f}）")
         if not ok:
             bad.append("照片尺寸不对")
 
