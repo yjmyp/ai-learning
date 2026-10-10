@@ -19,8 +19,12 @@ except Exception:
 import job_sources as js  # noqa: E402
 
 
-def fake_search(src, keyword, city="", ask_model=None, diag=None):
-    """假的来源：甲平台有南京岗，乙平台全是深圳岗。"""
+def fake_search(src, keyword, city="", ask_model=None, diag=None, **kwargs):
+    """假的来源：甲平台有南京岗，乙平台全是深圳岗。
+
+    **kwargs 必须留着：search_all 会额外传 max_items（每源抓取上限）。
+    不接它，测试就会 TypeError —— 这正是"改了调用签名忘了改假实现"的典型翻车。
+    """
     if diag is not None:
         diag["raw"] = 2
     if src == "甲平台":
