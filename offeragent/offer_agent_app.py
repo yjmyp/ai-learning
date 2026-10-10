@@ -249,11 +249,8 @@ def check_auth():
         except Exception:
             pass
     if not pw and not pw_hash:
-        if _is_cloud():
-            st.error("⚠️ 这个应用跑在公网，但没有设置访问密码。任何拿到链接的人都能用你的 "
-                     "DeepSeek Key 花钱。请到 Manage app → Settings → Secrets 加一行：\n\n"
-                     "```toml\nAPP_PASSWORD = \"你自己的密码\"\n```\n\n"
-                     "保存后应用会自动重启，刷新本页就会出现密码框。")
+        # 免密模式：公网演示主动选择免密直开（面试官可直接体验），
+        # 成本由 DAILY_CALL_LIMIT 每日限额兜底，不再弹红色警告打扰访问者。
         return
     if st.session_state.get("auth_ok"):
         return
