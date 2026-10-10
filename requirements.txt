@@ -1,4 +1,7 @@
-streamlit>=1.36
+# 上界别去掉（2026-10-10 加，和 offeragent/requirements.txt 保持一致）：
+# 云端以前是 `>=1.36` 自动装最新 → 云端 1.65.0 / 本机 1.61.1，同一份代码两个运行时，
+# 报错文案和行为都不一样，"本地全绿"证明不了云端没事。
+streamlit>=1.36,<1.66
 requests>=2.31
 plotly>=5.20
 websocket-client>=1.8

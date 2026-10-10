@@ -125,6 +125,66 @@ def _as_dict(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _ago(seconds) -> str:
+    """把"多少秒前"说成人话（给"上次搜岗"提示用）。"""
+    try:
+        s = int(seconds or 0)
+    except Exception:
+        return "刚刚"
+    if s < 60:
+        return f"{s} 秒"
+    if s < 3600:
+        return f"{s // 60} 分钟"
+    return f"{s // 3600} 小时"
+
+
+def _search_view() -> dict:
+    """搜岗结果的**唯一读入口**：当次运行 → 磁盘快照 → "还在跑"三种情况。
+
+    为什么不能只读 st.session_state：Streamlit 一重跑（动别的控件 / 前端重连 /
+    手机切后台），正在跑的那次搜索所在的运行会被中断，它算出来的结果只写在
+    **当次的** session_state 里 → 新运行读到空，页面表现为"点了搜岗没反应"。
+    现在 search_all() 返回前已经把结果落了磁盘快照（见 job_sources.save_last_search），
+    所以这里读不到 session_state 时就从快照兜底，并如实说明"这是上一次的结果"。
+    """
+    if st.session_state.get("sr_results") is not None:
+        return {
+            "jobs": st.session_state.get("sr_results") or [],
+            "stats": _as_dict(st.session_state.get("sr_stats")),
+            "errors": _as_dict(st.session_state.get("sr_errors")),
+            "diag": _as_dict(st.session_state.get("sr_diag")),
+            "cities": _as_dict(st.session_state.get("sr_city_dist")),
+            "miss": _as_dict(st.session_state.get("sr_city_miss")),
+            "relaxed_all": bool(st.session_state.get("sr_relaxed_all")),
+            "wants": st.session_state.get("sr_wants") or [],
+            "elapsed": st.session_state.get("sr_elapsed"),
+            "cache_hits": int(st.session_state.get("sr_cache_hits") or 0),
+            "restored": False, "age_s": 0, "query": None,
+            "inflight": job_sources.search_in_flight(),
+        }
+    snap = job_sources.load_last_search()
+    if snap:
+        return {
+            "jobs": snap.get("jobs") or [],
+            "stats": _as_dict(snap.get("by_source")),
+            "errors": _as_dict(snap.get("errors")),
+            "diag": _as_dict(snap.get("diag")),
+            "cities": _as_dict(snap.get("cities")),
+            "miss": _as_dict(snap.get("city_miss")),
+            "relaxed_all": bool(snap.get("relaxed_all")),
+            "wants": snap.get("wants") or [],
+            "elapsed": snap.get("elapsed"),
+            "cache_hits": int(snap.get("cache_hits") or 0),
+            "restored": True, "age_s": snap.get("age_s") or 0,
+            "query": snap.get("keyword") or "",
+            "inflight": job_sources.search_in_flight(),
+        }
+    return {"jobs": [], "stats": {}, "errors": {}, "diag": {}, "cities": {}, "miss": {},
+            "relaxed_all": False, "wants": [], "elapsed": None, "cache_hits": 0,
+            "restored": False, "age_s": 0, "query": None,
+            "inflight": job_sources.search_in_flight()}
+
+
 # ============================================================
 # 页面：岗位库（v2 · 支持 URL 一键导入）
 # ============================================================
@@ -203,15 +263,28 @@ def page_jobs():
                     except Exception as e:
                         st.session_state["sr_results"] = []
                         st.error(str(e))
-        stats = _as_dict(st.session_state.get("sr_stats"))
-        errors = _as_dict(st.session_state.get("sr_errors"))
-        wants = st.session_state.get("sr_wants") or []
+        view = _search_view()
+        stats = view["stats"]
+        errors = view["errors"]
+        wants = view["wants"]
+        # 结果不是当次搜出来的两种情形，都要说清楚，别让人以为"点了没反应"
+        if view["restored"] and view["jobs"]:
+            st.info(f"下面这些是**上一次搜岗**的结果（关键词「{view['query'] or '—'}」，"
+                    f"{_ago(view['age_s'])}前，共 {len(view['jobs'])} 条）——"
+                    "刚才那次页面重跑把「开始搜岗」那一下冲掉了，结果没丢。"
+                    "想要最新的岗位，再点一次「开始搜岗」（10 分钟内命中缓存，秒回）。")
+        elif view["inflight"] and not view["jobs"]:
+            st.info("⏳ 上一次搜岗还在跑：页面重跑打断的只是显示，结果不会丢。"
+                    "等它跑完，点下面的「🔄 刷新看看」就能看到结果"
+                    "（或再点一次「开始搜岗」，同一条件 10 分钟内命中缓存秒回）。")
+            if st.button("🔄 刷新看看", key="wq_refresh"):
+                st.rerun()
         if stats:
             st.markdown("**各来源命中：**" + "　".join(
                 f"{k} **{v}** 条" for k, v in stats.items()))
-            _el = st.session_state.get("sr_elapsed")
+            _el = view["elapsed"]
             if _el is not None:
-                _ch = int(st.session_state.get("sr_cache_hits") or 0)
+                _ch = view["cache_hits"]
                 st.caption(
                     f"⏱️ 本次耗时 {_el:.1f} 秒"
                     + (f"（其中 {_ch} 个来源命中缓存、没有联网）" if _ch else "")
@@ -219,20 +292,20 @@ def page_jobs():
             if wants:
                 st.caption("城市条件：" + "、".join(wants)
                            + ("（严格：不匹配的不显示）" if strict_city else ""))
-            if st.session_state.get("sr_relaxed_all"):
+            if view["relaxed_all"]:
                 st.warning("⚠️ 这次**所有来源都没有**你选的城市岗位，已自动放宽为「全国结果」——"
                            "下面的岗位都不是你选的城市，注意看城市列。")
-            miss = _as_dict(st.session_state.get("sr_city_miss"))
+            miss = view["miss"]
             if miss:
                 detail = "；".join(f"{k} {v} 条全被过滤" for k, v in miss.items())
                 st.info("这些来源这次没有你选的城市岗位：" + detail
                         + "　（它们的岗位城市见下面「抓取诊断」）")
-            cdist = _as_dict(st.session_state.get("sr_city_dist"))
+            cdist = view["cities"]
             if cdist:
                 with st.expander("📍 各来源这次捞回来的城市分布（解释为什么结果少）"):
                     for s, rows in cdist.items():
                         st.markdown(f"- **{s}**：" + "、".join(f"{c} {n}" for c, n in rows))
-        _diag = _as_dict(st.session_state.get("sr_diag"))
+        _diag = view["diag"]
         if _diag:
             with st.expander("🔬 抓取诊断（岗位为什么只有这些？）"):
                 st.caption("这里是每个平台「页面里有多少条 → 抽出来多少条」。"
@@ -277,7 +350,9 @@ def page_jobs():
                     "5. 单个岗位想看得更细，用「🔗 URL 导入」把链接粘进来单独抓。")
         for k, v in errors.items():
             st.warning(f"{k} 没成功：{v}")
-        results = st.session_state.get("sr_results", [])
+        results = view["jobs"]
+        # 入库时记的"搜索关键词"：恢复出来的结果要用它自己那次的关键词，别记成现在输入框里的
+        query = view["query"] if view["restored"] and view["query"] else kw.strip()
         if results:
             st.success(f"合并后共 {len(results)} 条（已去重）。勾选要入库的，然后点下面的按钮。")
             picked = []
@@ -327,7 +402,7 @@ def page_jobs():
                         "company": j.get("company", ""),
                         "salary": j.get("salary", ""),
                         "skills": j.get("extra", ""),
-                        "search_query": kw.strip(),
+                        "search_query": query,
                         "quality": job_quality.assess(j),
                     })
                     added += 1

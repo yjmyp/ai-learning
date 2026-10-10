@@ -1617,6 +1617,97 @@ def cache_clear() -> int:
 
 
 # ============================================================
+# 4.5) 最近一次搜岗结果的快照（防"页面重跑把结果冲掉"）
+# ============================================================
+# 事故（2026-10-10 实测复现）：点「开始搜岗」→ 搜索要跑十几秒 → 这期间页面上
+# **任何一次重跑**（动别的控件 / 前端重连 / 手机切后台）都会中断"正在跑的那次运行"。
+# 旧运行算出来的结果只写进了当次的 st.session_state，新运行什么都读不到 →
+# 页面既不出结果也不报错，等满 120 秒还是空的，用户看到的就是"点了没反应"。
+# 修法：search_all() 在返回之前，先把完整结果**落一份磁盘快照**（纯文件 I/O，
+# 不碰 Streamlit，所以运行被打断也照样写得下去）；页面渲染时先看 session_state，
+# 没有再读回快照 —— 结果就不再依赖"当次运行还在不在"。
+LAST_SEARCH_TTL = 1800          # 秒。半小时内算"刚搜的"，过期就不再自动显示
+LAST_SEARCH_PATH = Path(__file__).resolve().parent / "data" / "last_search.json"
+_LAST_SEARCH_LOCK = threading.Lock()
+
+
+def last_search_path() -> Path:
+    """快照文件位置。环境变量 JOBS_LAST_SEARCH 可覆盖（测试/多实例用）。"""
+    env = os.environ.get("JOBS_LAST_SEARCH", "").strip()
+    return Path(env) if env else LAST_SEARCH_PATH
+
+
+def save_last_search(res: dict, keyword: str = "", city: str = "",
+                     sources: list = None, strict_city: bool = True,
+                     max_per_source: int = 0, elapsed: float = 0.0) -> bool:
+    """把一次搜岗的完整结果写成快照。只返回成败，**绝不抛异常**（不能让搜索挂掉）。"""
+    if not isinstance(res, dict):
+        return False
+    try:
+        snap = {
+            "t": time.time(),
+            "keyword": keyword or "",
+            "city": city or "",
+            "sources": list(sources or []),
+            "strict_city": bool(strict_city),
+            "max_per_source": int(max_per_source or 0),
+            "elapsed": float(elapsed or 0.0),
+            "jobs": res.get("jobs") or [],
+            "by_source": res.get("by_source") or {},
+            "errors": res.get("errors") or {},
+            "diag": res.get("diag") or {},
+            "cities": res.get("cities") or {},
+            "relaxed": res.get("relaxed") or {},
+            "city_miss": res.get("city_miss") or {},
+            "relaxed_all": bool(res.get("relaxed_all")),
+            "wants": res.get("wants") or [],
+            "cache_hits": int(res.get("cache_hits") or 0),
+        }
+        p = last_search_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with _LAST_SEARCH_LOCK:
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, p)      # 原子替换：不会读到写了一半的文件
+        return True
+    except Exception as e:          # noqa: BLE001 —— 快照只是兜底，坏了不能影响搜岗
+        _dbg(f"写最近搜岗快照失败（忽略）：{type(e).__name__}")
+        return False
+
+
+def load_last_search(ttl: int = LAST_SEARCH_TTL) -> dict:
+    """读回最近一次搜岗的快照。没有/过期/文件坏了都返回 {}，不抛异常。
+
+    返回里额外带 "age_s"（距今多少秒），界面用它写"x 分钟前搜的"。
+    """
+    try:
+        data = json.loads(last_search_path().read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
+        return {}
+    try:
+        age = time.time() - float(data.get("t") or 0)
+    except Exception:
+        return {}
+    if age < 0 or age > ttl:
+        return {}
+    data["age_s"] = int(age)
+    return data
+
+
+def search_in_flight() -> bool:
+    """此刻是不是有一次搜岗正在跑（同一进程里那道闸被占着）。
+
+    用途：页面被重跑后，界面要能说清"结果不是没有，是还在跑"。
+    """
+    if _SEARCH_LOCK.acquire(blocking=False):
+        _SEARCH_LOCK.release()
+        return False
+    return True
+
+
+# ============================================================
 # 5) 多平台合并搜岗
 # ============================================================
 ALL_SOURCES = "全部平台（合并去重）"
@@ -1690,6 +1781,10 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     try:
         res = _search_all_impl(keyword, city, ask_model, sources, strict_city,
                                custom_url, max_per_source, use_cache)
+        # 先落磁盘快照再返回：调用方所在的那次 Streamlit 运行随时可能被打断
+        # （用户动一下控件就重跑），快照写下去了，结果就丢不了。
+        save_last_search(res, keyword, city, sources, strict_city,
+                         max_per_source, time.perf_counter() - _t0)
         _dbg("搜岗结束：%.1fs，合并 %d 条 %s" % (time.perf_counter() - _t0,
                                                len(res.get("jobs") or []), res.get("by_source")))
         return res

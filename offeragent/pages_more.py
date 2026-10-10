@@ -28,6 +28,7 @@ import v41
 import company_lookup
 import job_detail
 import doc_io
+import build_info
 import privacy_tools
 import resume_builder
 import resume_clean
@@ -127,6 +128,15 @@ def page_settings():
     st.markdown("---")
     st.caption("分享链接、名片页、简历导出都在「📇 展示」页；"
                "照片、简历正文和模板在「🎯 找工作 → 简历」页。")
+    st.markdown("---")
+    # ---------------- 运行版本：本地和云端一对比就知道有没有"跑旧代码/旧版本" ----------------
+    st.markdown("##### 🧾 运行版本")
+    _bi = build_info.describe()
+    st.caption(f"Streamlit `{_bi['streamlit']}`　·　Python `{_bi['python']}`"
+               f"　·　代码指纹 `{_bi['code']}`")
+    st.caption("这两个数字本地和云端各看一眼：**对不上**说明云端还在跑旧代码"
+               "（Streamlit Cloud 要点 Manage app → Reboot）或装的 Streamlit 版本不同"
+               "——那意味着「本地全绿」证明不了云端没事。")
     st.markdown("---")
     st.markdown("##### 🔒 访问密码（上线公网前设置）")
     st.caption("设置后访问应用需要先输密码。密码以 SHA-256 哈希保存在本机 config.json，"
