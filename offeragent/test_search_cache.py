@@ -12,6 +12,7 @@
 import os
 import sys
 import tempfile
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -141,6 +142,51 @@ def test_search_all_uses_cache():
             and r1["jobs"] == r2["jobs"])
 
 
+def test_cross_source_parallel():
+    """纯 HTTP 的来源要并发抓（总耗时≈最慢的那个，而不是三个相加），且输出顺序不变。
+
+    故意让完成顺序和输入顺序相反（腾讯 0.05s 先回、牛客 0.30s 后回），
+    这样"输出仍按 sources 顺序"这条才真的被验证到。
+    """
+    js.CACHE_ENABLED = False
+    delays = {"牛客": 0.30, "腾讯招聘": 0.05, "网易招聘": 0.20}
+
+    def fake_search(src, keyword, city="", ask_model=None, diag=None, **kw):
+        time.sleep(delays.get(src, 0))
+        return [{"title": "岗-" + src, "company": "公司" + src, "city": "南京",
+                 "salary": "", "url": "u-" + src, "source": src, "extra": "",
+                 "jd": "", "match_hits": 1, "city_hit": True}]
+
+    orig = js.search
+    js.search = fake_search
+    try:
+        t0 = time.perf_counter()
+        r = js.search_all("AI", "南京", sources=list(delays), strict_city=True)
+        dt = time.perf_counter() - t0
+    finally:
+        js.search = orig
+    order_ok = [j["source"] for j in r["jobs"]] == ["牛客", "腾讯招聘", "网易招聘"]
+    return dt < 0.6 and order_ok and len(r["jobs"]) == 3
+
+
+def test_browser_source_stays_serial():
+    """要浏览器 + 大模型的来源（实习僧/BOSS）不许进线程池——ask_chat 依赖 Streamlit 会话状态。"""
+    js.CACHE_ENABLED = False
+    in_main = {}
+
+    def fake_search(src, keyword, city="", ask_model=None, diag=None, **kw):
+        in_main[src] = threading.current_thread() is threading.main_thread()
+        return []
+
+    orig = js.search
+    js.search = fake_search
+    try:
+        js.search_all("AI", "", sources=["牛客", "腾讯招聘", "实习僧"])
+    finally:
+        js.search = orig
+    return in_main.get("实习僧") is True and in_main.get("牛客") is False
+
+
 def main():
     checks = [
         ("缓存读写 + 键归一（关键词/城市/上限不串味）", test_cache_basic()),
@@ -150,6 +196,8 @@ def main():
         ("礼貌节流：同站点请求间隔 ≥ 0.2s（并发≠轰站）", test_parallel_throttle()),
         ("到底提前收工 / 单页失败只废这页 / 单线程退化成顺序", test_parallel_stop_and_error()),
         ("search_all 第二次同条件命中缓存、不再联网", test_search_all_uses_cache()),
+        ("跨来源并发：纯 HTTP 三个来源并行、输出顺序仍按 sources", test_cross_source_parallel()),
+        ("实习僧/BOSS 不进线程池（ask_chat 非线程安全）", test_browser_source_stays_serial()),
     ]
     ok_n = sum(1 for _, v in checks if v)
     for name, good in checks:

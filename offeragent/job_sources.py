@@ -71,6 +71,11 @@ OVERSEAS_SOURCES = ["Remotive(远程)", "RemoteOK(远程)", "Arbeitnow(海外)",
                     "WeWorkRemotely(远程)", "HN Who's Hiring(海外)",
                     "Greenhouse-AI公司(海外)"]
 NEEDS_BROWSER = {"实习僧", "BOSS直聘"}
+# 能并发抓的来源 = 全部来源 - 要浏览器的两个。判据是"这条链路会不会碰大模型/浏览器"：
+# 实习僧、BOSS 要走无头浏览器 + ask_model 抽岗位，而界面传进来的 ask_model 是
+# Streamlit 里的 ask_chat（读写 st.session_state，**不是线程安全的**）→ 只能主线程串行。
+# 其余 9 个来源都是纯 HTTP（requests + 本地解析），并发跑没有共享状态。
+PARALLEL_SAFE_SOURCES = set(SOURCES) - NEEDS_BROWSER
 
 # 城市别名：用户会写"南京市 / 江苏南京 / 魔都 / remote"，接口返回的可能是"南京"或"南京/上海"。
 # 不做归一的话，"南京市" 永远匹配不上接口里的 "南京" —— 这就是"城市填了但结果对不上"的根因之一。
@@ -703,6 +708,7 @@ def sleep_between_pages(seconds: float = 0.25):
 
 
 SEARCH_WORKERS = 3          # 单个站点的并发路数上限（不是越多越好，3 路足够且礼貌）
+SOURCE_WORKERS = 3          # 一次搜索里同时抓几个"来源"（每个来源内部再各自并发翻页）
 PAGE_MIN_INTERVAL = 0.25    # 同一站点两次请求的最小间隔（秒）
 
 _PAGE_LOCK = threading.Lock()
@@ -1431,6 +1437,20 @@ def dedup_key(job: dict) -> str:
     return f"{title}|{city}|{url}" if url else f"{title}|{comp}|{city}"
 
 
+def _parallel_safe(task) -> bool:
+    """这个来源能不能放进线程池（task = (来源名, 自定义地址)）。
+
+    只有**纯 HTTP** 的来源可以：它们只做 requests + 本地解析，没有共享状态。
+    实习僧 / BOSS 不行——它们走无头浏览器 + 大模型抽岗位，而界面传进来的 ask_model
+    是 Streamlit 里的 `ask_chat`，会读写 `st.session_state`，**Streamlit 的会话状态
+    不是线程安全的**。把这两个来源放主线程串行跑，界面就不会因为并发而莫名报错。
+    """
+    src, custom_url = task
+    if custom_url:
+        return True          # 自定义来源是纯 HTTP（RSS/JSON 解析），不调模型
+    return src in PARALLEL_SAFE_SOURCES
+
+
 def boss_available() -> tuple:
     """BOSS 能不能用：返回 (bool, 原因)。云端/没浏览器时为 False。"""
     try:
@@ -1449,6 +1469,10 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     use_cache=True 时：同一「来源+关键词+城市+每源上限」10 分钟内直接复用上次结果
     （抓一次十几秒，全是网络等待；重复搜同一条件是纯浪费）。每个来源的命不命中
     都写进 diag[来源]["cache"]，界面上能看到。
+
+    并发：**纯 HTTP 的来源并发抓**（SOURCE_WORKERS=3，每个来源内部再各自并发翻页），
+    要浏览器 + 大模型的来源（实习僧 / BOSS）留在主线程串行（ask_chat 不是线程安全的，
+    见 _parallel_safe）。合并结果仍按 sources 的先后顺序输出，与串行抓取一致。
 
     返回 {
       "jobs": [...],                 # 合并去重后的岗位，牛客优先、其余按平台顺序
@@ -1494,18 +1518,24 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     if custom_url.strip():
         tasks.append(("自定义来源", custom_url.strip()))
 
-    for src, _custom_url in tasks:
+    def fetch_task(task):
+        """抓一个来源（含缓存读写），返回 (岗位列表, diag, 错误信息)。
+
+        注意：**这个函数可能跑在线程里**，所以它只许做纯 HTTP 的事（见 _parallel_safe）；
+        异常一律在内部吃掉转成错误信息，避免一个来源炸掉整次搜索。
+        """
+        src, _cu = task
         d = {}
         try:
             rows = None
-            if use_cache and not _custom_url:      # 自定义来源不缓存（地址就是变量）
+            if use_cache and not _cu:              # 自定义来源不缓存（地址就是变量）
                 hit, age = cache_get(src, keyword, city, max_per_source)
                 if hit is not None:
                     rows = hit
                     d["cache"] = "命中缓存（%.0f 秒前抓的同一条件，未联网）" % age
             if rows is None:
-                if _custom_url:
-                    rows = search_custom_feed(_custom_url, keyword, city,
+                if _cu:
+                    rows = search_custom_feed(_cu, keyword, city,
                                               diag=d, limit=max_per_source)
                 else:
                     rows = search(src, keyword, city, ask_model, diag=d,
@@ -1513,27 +1543,47 @@ def search_all(keyword: str, city: str = "", ask_model=None,
                     if use_cache:
                         cache_put(src, keyword, city, max_per_source, rows)
                         d["cache"] = "未命中缓存，这次联网抓取（%d 条已写入缓存）" % len(rows)
-            raw_by_src[src] = list(rows)
-            # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
-            counter = {}
-            for j in rows:
-                c = (j.get("city") or "未标注").strip() or "未标注"
-                counter[c] = counter.get(c, 0) + 1
-            city_stats[src] = sorted(counter.items(), key=lambda x: -x[1])[:6]
-            # 严格城市过滤：不匹配就**整条丢掉**（宁缺毋滥，用户要的是"城市对得上"）
-            if strict_city and wants:
-                keep = [j for j in rows if city_hit(j.get("city"), wants)]
-                relaxed[src] = len(rows) - len(keep)
-                if not keep and rows:
-                    city_miss[src] = len(rows)      # 这个平台这次没有目标城市的岗位
-                rows = keep
-            by_source[src] = len(rows)
-            diag[src] = d
+            return list(rows), d, ""
         except Exception as e:
+            return [], d, str(e)[:200]
+
+    # ---- 抓取：纯 HTTP 的来源并发跑；要浏览器/大模型的留在主线程串行 ----
+    fetched = {}
+    safe = [t for t in tasks if _parallel_safe(t)]
+    slow = [t for t in tasks if not _parallel_safe(t)]
+    if len(safe) > 1:
+        with ThreadPoolExecutor(max_workers=min(SOURCE_WORKERS, len(safe))) as ex:
+            for task, got in zip(safe, ex.map(fetch_task, safe)):   # map 保序
+                fetched[task[0]] = got
+    else:
+        for t in safe:
+            fetched[t[0]] = fetch_task(t)
+    for t in slow:
+        fetched[t[0]] = fetch_task(t)
+
+    for src, _custom_url in tasks:        # 仍按原顺序合并，输出顺序与串行时完全一致
+        rows, d, err = fetched.get(src, ([], {}, "内部错误：这个来源没抓到结果"))
+        raw_by_src[src] = list(rows)
+        if err:
             by_source[src] = 0
-            errors[src] = str(e)[:200]
+            errors[src] = err
             diag[src] = d
             continue
+        # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
+        counter = {}
+        for j in rows:
+            c = (j.get("city") or "未标注").strip() or "未标注"
+            counter[c] = counter.get(c, 0) + 1
+        city_stats[src] = sorted(counter.items(), key=lambda x: -x[1])[:6]
+        # 严格城市过滤：不匹配就**整条丢掉**（宁缺毋滥，用户要的是"城市对得上"）
+        if strict_city and wants:
+            keep = [j for j in rows if city_hit(j.get("city"), wants)]
+            relaxed[src] = len(rows) - len(keep)
+            if not keep and rows:
+                city_miss[src] = len(rows)          # 这个平台这次没有目标城市的岗位
+            rows = keep
+        by_source[src] = len(rows)
+        diag[src] = d
         for j in rows:
             # 去重键见 dedup_key()：岗位名 + 公司，公司名拿不到时退回 URL
             key = dedup_key(j)
