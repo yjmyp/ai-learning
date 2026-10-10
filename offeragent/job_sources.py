@@ -2,16 +2,24 @@
 """
 job_sources · 岗位来源（联网搜岗）
 ==================================
-三个源，各用最合适的抓法：
+每个源用最合适的抓法（按"正规程度"从高到低）：
 
-  nowcoder   牛客实习中心 —— 页面里有结构化 JSON，直接解析，不用大模型（最快最稳）
-  shixiseng  实习僧       —— 抓页面文本，交给大模型抽成岗位列表
-  boss       BOSS直聘     —— 强反爬，走真实浏览器（browser_fetch 复用你的登录态），
-                            再交给大模型抽成岗位列表
+  官方公开接口（免登录，最正规）
+    tencent / netease   腾讯招聘 / 网易招聘 —— 公司自己的招聘接口，直接返回 JSON
+    greenhouse          AI 公司官方 ATS 接口（Anthropic 等），公司主动开放
+    remoteok / arbeitnow / remotive / wwr / HN —— 海外远程岗公开 API 与官方 RSS
+    nowcoder            牛客实习中心 —— 页面自己的搜索接口（公开、免登录）
+  公开页面渲染（免登录，但要本机浏览器）
+    shixiseng           实习僧 —— 前端渲染，用无头浏览器跑 JS 后交大模型抽取
+  真实浏览器 + 复用登录态（需本机已登录）
+    boss                BOSS直聘 —— 强反爬，走 CDP 连本机已登录的 Edge
 
 统一返回：[{title, company, city, salary, url, extra, source}]
+
+合规边界：只读公开内容、不绕登录、不破签名、低频；海外源本机可能需要走代理。
 """
 import json
+import os
 import re
 import time
 from urllib.parse import quote
@@ -48,8 +56,16 @@ BOSS_CITY_CODES = {
 # 来源清单。分两类：
 #   NO_LOGIN_SOURCES：公开接口/网页，**不用登录**，云端也能用（默认就搜这些）
 #   其余：实习僧要本机浏览器渲染、BOSS 要本机登录态 —— 云端用不了，按需勾选
-SOURCES = ["牛客", "腾讯招聘", "网易招聘", "Remotive(远程)", "实习僧", "BOSS直聘"]
-NO_LOGIN_SOURCES = ["牛客", "腾讯招聘", "网易招聘", "Remotive(远程)"]
+SOURCES = ["牛客", "腾讯招聘", "网易招聘", "Remotive(远程)",
+           "RemoteOK(远程)", "Arbeitnow(海外)", "WeWorkRemotely(远程)",
+           "HN Who's Hiring(海外)", "Greenhouse-AI公司(海外)",
+           "实习僧", "BOSS直聘"]
+# 国内免登录（默认勾选，云端也能用）
+NO_LOGIN_SOURCES = ["牛客", "腾讯招聘", "网易招聘"]
+# 海外/远程免登录（本机需代理，云端直连即可；默认不勾，想找海外 AI 岗时自己勾上）
+OVERSEAS_SOURCES = ["Remotive(远程)", "RemoteOK(远程)", "Arbeitnow(海外)",
+                    "WeWorkRemotely(远程)", "HN Who's Hiring(海外)",
+                    "Greenhouse-AI公司(海外)"]
 NEEDS_BROWSER = {"实习僧", "BOSS直聘"}
 
 # 城市别名：用户会写"南京市 / 江苏南京 / 魔都 / remote"，接口返回的可能是"南京"或"南京/上海"。
@@ -545,6 +561,54 @@ def _kw_hits(blob: str, kws: list) -> int:
     return sum(1 for k in kws if k.lower() in low)
 
 
+# ---------- 海外源的网络细节：直连失败自动走本机代理 ----------
+# 本机（国内网络）直连 remoteok / greenhouse / HN 这些会被重置；
+# 云端（Streamlit Cloud 在美国）直连正常。所以策略是：先直连，失败再试代理，
+# 代理端口自动探测，也可以用 JOBS_PROXY 显式指定。
+_PROXY_CACHE = "unset"
+
+
+def _local_proxy():
+    global _PROXY_CACHE
+    if _PROXY_CACHE != "unset":
+        return _PROXY_CACHE
+    import socket
+    env = os.environ.get("JOBS_PROXY", "").strip()
+    if env:
+        _PROXY_CACHE = {"http": env, "https": env}
+        return _PROXY_CACHE
+    for port in (7897, 7890, 7891, 10809, 10808):
+        s = socket.socket()
+        s.settimeout(0.3)
+        try:
+            s.connect(("127.0.0.1", port))
+            _PROXY_CACHE = {"http": "http://127.0.0.1:%d" % port,
+                            "https": "http://127.0.0.1:%d" % port}
+            return _PROXY_CACHE
+        except Exception:
+            continue
+        finally:
+            s.close()
+    _PROXY_CACHE = None
+    return None
+
+
+def fetch_json_or_text(url: str, method: str = "GET", timeout: int = 30, **kwargs):
+    """先直连、失败再走本机代理；返回 requests.Response。海外源统一走这里。"""
+    last = None
+    for proxies in (None, _local_proxy()):
+        try:
+            fn = requests.get if method.upper() == "GET" else requests.post
+            r = fn(url, headers=kwargs.pop("headers", H), timeout=timeout,
+                   proxies=proxies, **kwargs)
+            if r.status_code == 200:
+                return r
+            last = f"HTTP {r.status_code}"
+        except Exception as e:
+            last = type(e).__name__
+    raise RuntimeError(f"取不到 {url}：{last}")
+
+
 def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
                    pages: int = 2) -> list:
     """腾讯招聘公开接口（免登录）。城市在客户端过滤——接口没有可用的城市参数。"""
@@ -658,6 +722,287 @@ def search_remotive(keyword: str = "", city: str = "", diag: dict = None,
 
 
 # ============================================================
+# 3.6) 海外 / 官方 ATS 来源（免登录）：RemoteOK / Arbeitnow / WeWorkRemotely / HN / Greenhouse
+#      本机直连可能被重置 → 统一走 fetch_json_or_text（直连失败自动代理）；云端直连即可
+# ============================================================
+REMOTEOK_API = "https://remoteok.com/api"
+ARBEITNOW_API = "https://www.arbeitnow.com/api/job-board-api"
+WWR_RSS = "https://weworkremotely.com/categories/remote-programming-jobs.rss"
+HN_ALGOLIA = "https://hn.algolia.com/api/v1"
+GREENHOUSE_API = "https://boards-api.greenhouse.io/v1/boards/%s/jobs"
+
+# Greenhouse 是很多 AI 公司的官方招聘系统（公开接口，完全合规）。
+# slug 就是公司名（boards.greenhouse.io/<slug>）；换公司只改这一行。
+ATS_COMPANIES = {
+    "anthropic": "Anthropic",
+    "scaleai": "Scale AI",
+    "cohere": "Cohere",
+    "huggingface": "Hugging Face",
+    "mistral": "Mistral AI",
+    "together": "Together AI",
+    "runwayml": "Runway",
+}
+
+
+def search_remoteok(keyword: str = "", city: str = "", diag: dict = None,
+                    limit: int = 40) -> list:
+    """RemoteOK 公开 JSON（免登录，全是远程岗）。"""
+    kws, wants = split_terms(keyword), want_cities(city)
+    try:
+        data = fetch_json_or_text(REMOTEOK_API).json()
+    except Exception as e:
+        if diag is not None:
+            diag["api_error"] = str(e)[:80]
+        return []
+    raw = [x for x in data if isinstance(x, dict) and x.get("position")]
+    jobs = []
+    for j in raw[:400]:
+        title = j.get("position") or ""
+        blob = f"{title} {' '.join(j.get('tags') or [])} {j.get('description') or ''}"
+        if kws and not any(k.lower() in blob.lower() for k in kws):
+            continue
+        jobs.append(_pack(title, j.get("company") or "", "远程", j.get("salary") or "",
+                          j.get("url") or j.get("apply_url") or "", "RemoteOK(远程)",
+                          extra=" | ".join(j.get("tags") or [])[:80],
+                          jd=html_to_text(str(j.get("description") or ""))[:4000],
+                          hits=_kw_hits(blob, kws), ch=city_hit("远程", wants)))
+        if len(jobs) >= limit:
+            break
+    if diag is not None:
+        diag.update({"raw": len(raw), "kept": len(jobs), "cities": wants,
+                     "source_api": "公开 JSON", "note": "全远程岗，英文"})
+    return jobs
+
+
+def search_arbeitnow(keyword: str = "", city: str = "", diag: dict = None,
+                     limit: int = 40) -> list:
+    """Arbeitnow 公开 job board API（免登录，欧洲为主）。"""
+    kws, wants = split_terms(keyword), want_cities(city)
+    try:
+        data = fetch_json_or_text(ARBEITNOW_API).json()
+    except Exception as e:
+        if diag is not None:
+            diag["api_error"] = str(e)[:80]
+        return []
+    raw = data.get("data") or []
+    jobs = []
+    for j in raw:
+        title = j.get("title") or ""
+        loc = j.get("location") or ""
+        tags = " ".join(j.get("tags") or [])
+        blob = f"{title} {tags} {j.get('description') or ''}"
+        if kws and not any(k.lower() in blob.lower() for k in kws):
+            continue
+        jobs.append(_pack(title, j.get("company_name") or "", loc, "",
+                          j.get("url") or "", "Arbeitnow(海外)",
+                          extra=tags[:80],
+                          jd=html_to_text(str(j.get("description") or ""))[:4000],
+                          hits=_kw_hits(blob, kws), ch=city_hit(loc, wants)))
+        if len(jobs) >= limit:
+            break
+    if diag is not None:
+        diag.update({"raw": len(raw), "kept": len(jobs), "cities": wants,
+                     "source_api": "公开 JSON", "note": "欧洲/海外岗，英文"})
+    return jobs
+
+
+def search_wwr(keyword: str = "", city: str = "", diag: dict = None,
+               limit: int = 40) -> list:
+    """WeWorkRemotely 官方 RSS（免登录，远程编程岗）。"""
+    import xml.etree.ElementTree as ET
+    kws, wants = split_terms(keyword), want_cities(city)
+    try:
+        xml = fetch_json_or_text(WWR_RSS).text
+        root = ET.fromstring(xml)
+    except Exception as e:
+        if diag is not None:
+            diag["api_error"] = f"{type(e).__name__}:{str(e)[:60]}"
+        return []
+    items = root.findall(".//item")
+    jobs = []
+    for it in items:
+        def txt(tag):
+            el = it.find(tag)
+            return (el.text or "").strip() if el is not None and el.text else ""
+        title_raw = txt("title")
+        desc = html_to_text(txt("description"))
+        blob = f"{title_raw} {desc}"
+        if kws and not any(k.lower() in blob.lower() for k in kws):
+            continue
+        # WWR 的标题通常是 "公司: 岗位"
+        company, title = ("", title_raw)
+        if ":" in title_raw:
+            company, title = title_raw.split(":", 1)[0].strip(), title_raw.split(":", 1)[1].strip()
+        jobs.append(_pack(title, company, "远程", "", txt("link"), "WeWorkRemotely(远程)",
+                          extra="RSS", jd=desc[:4000], hits=_kw_hits(blob, kws),
+                          ch=city_hit("远程", wants)))
+        if len(jobs) >= limit:
+            break
+    if diag is not None:
+        diag.update({"raw": len(items), "kept": len(jobs), "cities": wants,
+                     "source_api": "官方 RSS", "note": "远程编程岗，英文"})
+    return jobs
+
+
+def search_hn_hiring(keyword: str = "", city: str = "", diag: dict = None,
+                     limit: int = 30) -> list:
+    """Hacker News「Who is hiring」招聘贴（公开 Algolia API）。
+
+    为什么值得加：每月一贴，里面大量 AI/LLM 岗位，且很多是远程、不看学历看作品——
+    和我这种"自学 + 项目驱动"的候选人匹配度高。每条评论就是一个岗位。
+    """
+    kws, wants = split_terms(keyword), want_cities(city)
+    try:
+        s = fetch_json_or_text(HN_ALGOLIA + "/search", params={
+            "query": "Ask HN: Who is hiring", "tags": "story", "hitsPerPage": 5}).json()
+        hits = [h for h in (s.get("hits") or []) if "who is hiring" in (h.get("title") or "").lower()]
+        if not hits:
+            raise RuntimeError("没找到 Who is hiring 贴")
+        story_id = hits[0]["objectID"]
+        c = fetch_json_or_text(HN_ALGOLIA + "/search", params={
+            "tags": "comment,story_%s" % story_id, "hitsPerPage": 200}).json()
+        comments = c.get("hits") or []
+    except Exception as e:
+        if diag is not None:
+            diag["api_error"] = str(e)[:80]
+        return []
+    jobs = []
+    for h in comments:
+        # 只要**顶层评论**：Who is hiring 贴里每条顶层评论 = 一个招聘方的帖子；
+        # 嵌套回复是求职者提问，混进来就是噪音（第一版没过滤，抓到过"这说不通啊"这种回复）。
+        if str(h.get("parent_id")) != str(story_id):
+            continue
+        text = html_to_text(str(h.get("comment_text") or ""))
+        if not text or len(text) < 40:
+            continue
+        if kws and not any(k.lower() in text.lower() for k in kws):
+            continue
+        first = re.split(r"[|\n]", text)[0].strip()
+        jobs.append(_pack(first[:60] or "HN 招聘贴", "见正文", "远程/海外", "",
+                          f"https://news.ycombinator.com/item?id={h.get('objectID')}",
+                          "HN Who's Hiring(海外)", extra=HN_STORY_TITLE,
+                          jd=text[:4000], hits=_kw_hits(text, kws),
+                          ch=city_hit("远程", wants) if wants else True))
+        if len(jobs) >= limit:
+            break
+    if diag is not None:
+        diag.update({"raw": len(comments), "kept": len(jobs), "cities": wants,
+                     "source_api": "公开 API", "note": "每月招聘贴，AI 岗密集，英文"})
+    return jobs
+
+
+HN_STORY_TITLE = "Hacker News: Who is hiring（每月招聘贴）"
+
+
+def search_greenhouse(keyword: str = "", city: str = "", diag: dict = None,
+                      limit: int = 40) -> list:
+    """官方 ATS 接口（Greenhouse）：直接读取公司挂在招聘系统上的**全部**职位。
+
+    这是最正规的一类——公司自己开放的招聘 API，不是"爬"。名单见 ATS_COMPANIES，
+    想加公司就往那里面加 slug（boards.greenhouse.io/<slug>）。
+    """
+    kws, wants = split_terms(keyword), want_cities(city)
+    jobs, raw_n, failed = [], 0, []
+    for slug, name in ATS_COMPANIES.items():
+        try:
+            d = fetch_json_or_text(GREENHOUSE_API % slug).json()
+            lst = d.get("jobs") or []
+        except Exception as e:
+            failed.append(f"{name}:{type(e).__name__}")
+            continue
+        for j in lst:
+            raw_n += 1
+            title = j.get("title") or ""
+            loc = (j.get("location") or {}).get("name") or ""
+            depts = " ".join(d.get("name", "") for d in (j.get("departments") or []) if isinstance(d, dict))
+            offices = " ".join(o.get("name", "") for o in (j.get("offices") or []) if isinstance(o, dict))
+            meta = j.get("metadata") or []
+            meta_txt = " ".join(str(m.get("value")) for m in meta if isinstance(m, dict))
+            # 英文岗的标题未必含关键词（"Software Engineer, Safeguards" 也是 AI 岗），
+            # 所以标题 + 部门 + 办公地 + 元数据一起匹配
+            blob = f"{title} {depts} {offices} {meta_txt}"
+            if kws and not any(k.lower() in blob.lower() for k in kws):
+                continue
+            jobs.append(_pack(title, name, loc, "",
+                              j.get("absolute_url") or "",
+                              "Greenhouse-AI公司(海外)",
+                              extra=" | ".join(x for x in [depts, offices, meta_txt] if x)[:80],
+                              jd="（详情见职位链接；ATS 接口不返回 JD 正文）",
+                              hits=_kw_hits(title, kws), ch=city_hit(loc, wants)))
+            if len(jobs) >= limit:
+                break
+        if len(jobs) >= limit:
+            break
+    if diag is not None:
+        diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants,
+                     "source_api": "官方 ATS 接口",
+                     "note": "AI 公司官网职位（%d 家）" % len(ATS_COMPANIES),
+                     "failed": failed[:4]})
+    return jobs
+
+
+def search_custom_feed(url: str, keyword: str = "", city: str = "", diag: dict = None,
+                       limit: int = 40) -> list:
+    """自定义来源：填任意公开 RSS / Atom / JSON 列表地址，程序自己抽岗位。
+
+    为什么做这个：招聘渠道无穷多（高校就业网、公司博客、社区汇总贴、公众号导出…），
+    与其等程序内置，不如给一个"你填地址、我来抽"的通用口子。只读公开内容，不绕登录。
+    """
+    import xml.etree.ElementTree as ET
+    kws, wants = split_terms(keyword), want_cities(city)
+    try:
+        r = fetch_json_or_text(url)
+        body = r.text
+    except Exception as e:
+        if diag is not None:
+            diag["api_error"] = str(e)[:100]
+        return []
+    rows = []
+    try:                                    # JSON 形态
+        data = r.json()
+        items = data if isinstance(data, list) else (data.get("jobs") or data.get("data") or data.get("items") or [])
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            rows.append({
+                "title": it.get("title") or it.get("position") or it.get("name") or "",
+                "company": it.get("company") or it.get("company_name") or "",
+                "city": it.get("location") or it.get("city") or "",
+                "url": it.get("url") or it.get("link") or it.get("absolute_url") or "",
+                "jd": html_to_text(str(it.get("description") or ""))[:3000],
+            })
+    except Exception:                       # RSS/Atom 形态
+        try:
+            root = ET.fromstring(body)
+            for it in root.findall(".//item") + root.findall(".//{http://www.w3.org/2005/Atom}entry"):
+                def t(tag, atom=False):
+                    el = it.find(("{http://www.w3.org/2005/Atom}" + tag) if atom else tag)
+                    return (el.text or "").strip() if el is not None and el.text else ""
+                link = t("link") or (it.find("{http://www.w3.org/2005/Atom}link").attrib.get("href")
+                                     if it.find("{http://www.w3.org/2005/Atom}link") is not None else "")
+                rows.append({"title": t("title"), "company": "", "city": "",
+                             "url": link, "jd": html_to_text(t("description"))[:3000]})
+        except Exception as e:
+            if diag is not None:
+                diag["api_error"] = "解析失败：" + type(e).__name__
+            return []
+    jobs = []
+    for row in rows:
+        blob = f"{row['title']} {row['jd']} {row['city']}"
+        if kws and not any(k.lower() in blob.lower() for k in kws):
+            continue
+        jobs.append(_pack(row["title"], row["company"], row["city"], "", row["url"],
+                          "自定义来源", extra=url[:60], jd=row["jd"],
+                          hits=_kw_hits(blob, kws), ch=city_hit(row["city"], wants)))
+        if len(jobs) >= limit:
+            break
+    if diag is not None:
+        diag.update({"raw": len(rows), "kept": len(jobs), "cities": wants,
+                     "source_api": "自定义 URL", "note": url[:70]})
+    return jobs
+
+
+# ============================================================
 # 4) BOSS：真实浏览器（复用登录态）→ 大模型抽
 # ============================================================
 def search_boss(keyword: str, city: str = "", ask_model=None,
@@ -702,6 +1047,16 @@ def search(source: str, keyword: str, city: str = "", ask_model=None,
         return search_netease(keyword, city, diag=diag)
     if source == "Remotive(远程)":
         return search_remotive(keyword, city, diag=diag)
+    if source == "RemoteOK(远程)":
+        return search_remoteok(keyword, city, diag=diag)
+    if source == "Arbeitnow(海外)":
+        return search_arbeitnow(keyword, city, diag=diag)
+    if source == "WeWorkRemotely(远程)":
+        return search_wwr(keyword, city, diag=diag)
+    if source == "HN Who's Hiring(海外)":
+        return search_hn_hiring(keyword, city, diag=diag)
+    if source == "Greenhouse-AI公司(海外)":
+        return search_greenhouse(keyword, city, diag=diag)
     if source == "实习僧":
         return search_shixiseng(keyword, city or "", ask_model, diag=diag)
     if source == "BOSS直聘":
@@ -725,7 +1080,8 @@ def boss_available() -> tuple:
 
 
 def search_all(keyword: str, city: str = "", ask_model=None,
-               sources: list = None, strict_city: bool = True) -> dict:
+               sources: list = None, strict_city: bool = True,
+               custom_url: str = "") -> dict:
     """一次搜索，把多个平台的结果合并去重。
 
     返回 {
@@ -767,10 +1123,16 @@ def search_all(keyword: str, city: str = "", ask_model=None,
         targets = [t for t in targets if t != "BOSS直聘"]
         errors["BOSS直聘"] = _why
 
-    for src in targets:
+    # 把"自定义来源"当成一个额外来源一起处理（同一套城市过滤/去重逻辑）
+    tasks = [(s, "") for s in targets]
+    if custom_url.strip():
+        tasks.append(("自定义来源", custom_url.strip()))
+
+    for src, _custom_url in tasks:
         d = {}
         try:
-            rows = search(src, keyword, city, ask_model, diag=d)
+            rows = (search_custom_feed(_custom_url, keyword, city, diag=d)
+                    if _custom_url else search(src, keyword, city, ask_model, diag=d))
             raw_by_src[src] = list(rows)
             # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
             counter = {}
@@ -809,7 +1171,7 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     # 否则用户会看到"填了城市一条都没有"，比看到不匹配更糟。
     relaxed_all = False
     if strict_city and wants and not merged:
-        for src in targets:
+        for src, _u in tasks:
             for j in raw_by_src.get(src, []):
                 key = re.sub(r"\s+", "", f"{(j.get('title') or '').lower()}|"
                                           f"{(j.get('company') or '').lower()}")

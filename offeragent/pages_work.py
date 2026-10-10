@@ -136,10 +136,17 @@ def page_jobs():
         picked_sources = c3.multiselect(
             "来源", job_sources.SOURCES, default=job_sources.NO_LOGIN_SOURCES,
             key="src_sources",
-            help="牛客/腾讯/网易/Remotive 是公开接口，免登录；实习僧要本机浏览器；BOSS 要本机登录。")
+            help="默认三个是国内的公开接口（免登录、云端可用）。"
+                 "海外那组（Remotive/RemoteOK/Arbeitnow/WWR/HN/Greenhouse）都是公开 API/RSS，"
+                 "本机需要代理、云端直连即可；实习僧要本机浏览器；BOSS 要本机登录。")
         strict_city = c4.toggle("只要命中城市的岗位", value=True, key="src_strict",
                                 help="打开：城市不匹配的直接不显示（推荐）。"
                                      "如果所有来源都没有该城市的岗位，会自动放宽并提示。")
+        with st.expander("➕ 自定义来源（填任意公开 RSS / JSON 列表地址，程序自己抽岗位）"):
+            custom_url = st.text_input(
+                "RSS / Atom / JSON 地址", value="", key="src_custom_url",
+                placeholder="例如学校就业网 RSS、公司招聘 JSON、社区汇总贴 API")
+            st.caption("只读公开内容、不绕登录。填了就在本次搜索里一起抓，来源标为「自定义来源」。")
         city = " ".join(cities)
         if st.button("🔍 开始搜岗", type="primary", key="do_search"):
             if not picked_sources:
@@ -149,7 +156,8 @@ def page_jobs():
                     try:
                         res = job_sources.search_all(
                             kw.strip(), city.strip(), ask_model=lambda p: ask_chat(p),
-                            sources=list(picked_sources), strict_city=bool(strict_city))
+                            sources=list(picked_sources), strict_city=bool(strict_city),
+                            custom_url=custom_url.strip())
                         st.session_state["src_results"] = res["jobs"]
                         st.session_state["src_stats"] = res["by_source"]
                         st.session_state["src_errors"] = res["errors"]
