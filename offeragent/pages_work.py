@@ -142,6 +142,11 @@ def page_jobs():
         strict_city = c4.toggle("只要命中城市的岗位", value=True, key="src_strict",
                                 help="打开：城市不匹配的直接不显示（推荐）。"
                                      "如果所有来源都没有该城市的岗位，会自动放宽并提示。")
+        depth = st.slider("每个来源最多抓多少条（越大越慢）", min_value=40, max_value=500,
+                          value=200, step=20, key="src_depth",
+                          help="实测网易同一关键词有 1011 条、牛客 302 条、HN 招聘贴 782 条；"
+                               "以前每个来源只翻 1-2 页（40-100 条），所以你觉得岗位太少。"
+                               "现在按这个数决定翻几页。")
         with st.expander("➕ 自定义来源（填任意公开 RSS / JSON 列表地址，程序自己抽岗位）"):
             custom_url = st.text_input(
                 "RSS / Atom / JSON 地址", value="", key="src_custom_url",
@@ -157,7 +162,7 @@ def page_jobs():
                         res = job_sources.search_all(
                             kw.strip(), city.strip(), ask_model=lambda p: ask_chat(p),
                             sources=list(picked_sources), strict_city=bool(strict_city),
-                            custom_url=custom_url.strip())
+                            custom_url=custom_url.strip(), max_per_source=int(depth))
                         st.session_state["src_results"] = res["jobs"]
                         st.session_state["src_stats"] = res["by_source"]
                         st.session_state["src_errors"] = res["errors"]
@@ -205,8 +210,14 @@ def page_jobs():
                     if _d.get("api_total"):
                         bits.append(f"站点接口共 {_d['api_total']} 条，"
                                     f"抓了 {_d.get('api_pages')} 页")
+                    if _d.get("site_total"):
+                        bits.append(f"站点共 {_d['site_total']} 条")
                     if _d.get("raw") is not None:
-                        bits.append(f"页面结构化岗位 {_d['raw']} 条")
+                        bits.append(f"抓到 {_d['raw']} 条")
+                    if _d.get("source_api"):
+                        bits.append(str(_d["source_api"]))
+                    if _d.get("note"):
+                        bits.append(str(_d["note"])[:40])
                     if _d.get("text_len"):
                         bits.append(f"页面文本 {_d['text_len']} 字，分 {_d.get('chunks')} 块抽取")
                     if _d.get("keywords"):

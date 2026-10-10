@@ -153,7 +153,7 @@ def html_to_text(html: str) -> str:
 # 1) 牛客：结构化解析（不用大模型，最快最稳）
 # ============================================================
 def search_nowcoder(keyword: str = "", city: str = "", strict: bool = False,
-                    diag: dict = None) -> list:
+                    diag: dict = None, max_items: int = 300) -> list:
     """牛客实习中心。
 
     注意：以前是「关键词/城市不命中就直接丢掉」，结果是岗位数少得离谱
@@ -164,7 +164,10 @@ def search_nowcoder(keyword: str = "", city: str = "", strict: bool = False,
     还有一层：首页只带 20 条（页面里的 totalCount 其实是 145+）。所以这里先调
     牛客自己的搜索接口**翻页取几页**（20 → 60~100 条），接口不通才退回首页解析。
     """
-    items, api_diag = _nowcoder_api(keyword, NOWCODER_PAGES)
+    # 翻页深度按"想要多少条"算（每页 20）：实测同一关键词 api_total 能到 302，
+    # 以前写死 5 页 = 100 条就收工，是"岗位太少"的原因之一。
+    pages = max(NOWCODER_PAGES, pages_for(max_items, 20, cap=15))
+    items, api_diag = _nowcoder_api(keyword, pages)
     if items:
         if diag is not None:
             diag.update(api_diag)
@@ -267,20 +270,34 @@ NOWCODER_HEADERS = {
 
 
 def _nowcoder_api_requests(q: str, pages: int):
-    """直连接口翻页。缺了 Referer / Origin 会被判成爬虫（返回"服务器错误"）。"""
+    """直连接口翻页。缺了 Referer / Origin 会被判成爬虫（返回"服务器错误"）。
+
+    两个细节都是踩出来的：
+      · **单页失败不要整体放弃**：实测 302 条 / 16 页，中间某一页会偶发
+        ConnectionError；以前直接 break，结果只拿到 80 条（"岗位太少"的元凶之一）。
+        现在每页重试 1 次，仍失败就跳过这页继续翻后面的。
+      · 返回条数少于 pageSize 说明到底了，提前结束。
+    """
     body_tpl = ("requestFrom=1&page={p}&pageSize=20&recruitType=2"
                 "&pageSource=5001" + q)
-    items, total, done, err = [], 0, 0, ""
+    per_page = 20
+    items, total, done, err, skipped = [], 0, 0, "", []
     for p in range(1, pages + 1):
         url = (f"https://www.nowcoder.com{NOWCODER_API}"
                f"?_={int(time.time() * 1000)}")
-        try:
-            r = requests.post(url, data=body_tpl.format(p=p),
-                              headers=NOWCODER_HEADERS, timeout=20)
-            d = r.json()
-        except Exception as e:
-            err = str(e)[:120]
-            break
+        d = None
+        for attempt in range(2):          # 每页最多试 2 次
+            try:
+                r = requests.post(url, data=body_tpl.format(p=p),
+                                  headers=NOWCODER_HEADERS, timeout=20)
+                d = r.json()
+                break
+            except Exception as e:
+                err = str(e)[:120]
+                time.sleep(0.6)
+        if d is None:
+            skipped.append(p)             # 这页废了，但不影响后面的页
+            continue
         dd = d.get("data") if isinstance(d.get("data"), dict) else {}
         datas = dd.get("datas") or []
         if d.get("code") != 0 or not datas:
@@ -291,10 +308,15 @@ def _nowcoder_api_requests(q: str, pages: int):
         done = p
         if dd.get("totalPage") and p >= dd["totalPage"]:
             break
+        if len(datas) < per_page:
+            break
+        time.sleep(0.2)
     if items:
         diag = {"api_total": total, "api_pages": done, "api_via": "requests"}
         if err:
             diag["api_note"] = err
+        if skipped:
+            diag["api_skipped_pages"] = skipped
         return items, diag
     return [], {"api_error": err or "直连接口没返回数据"}
 
@@ -609,16 +631,37 @@ def fetch_json_or_text(url: str, method: str = "GET", timeout: int = 30, **kwarg
     raise RuntimeError(f"取不到 {url}：{last}")
 
 
+def pages_for(max_items: int, per_page: int = 20, cap: int = 15) -> int:
+    """按"想要多少条"算需要翻几页（带上限，防止用户把上限填成 10000 把站点打爆）。"""
+    try:
+        n = int(max_items)
+    except Exception:
+        n = 200
+    n = max(1, min(n, 1000))
+    return max(1, min(cap, -(-n // max(1, per_page))))
+
+
+def sleep_between_pages(seconds: float = 0.25):
+    """翻页之间歇一下：礼貌抓取，别让站点觉得被打。"""
+    time.sleep(seconds)
+
+
 def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
-                   pages: int = 2) -> list:
-    """腾讯招聘公开接口（免登录）。城市在客户端过滤——接口没有可用的城市参数。"""
+                   pages: int = None, max_items: int = 200) -> list:
+    """腾讯招聘公开接口（免登录）。城市在客户端过滤——接口没有可用的城市参数。
+
+    分页：pageSize 用 50（实测有效），一直翻到没数据或到 max_items。
+    以前固定 2 页只拿 40 条，是"岗位太少"的原因之一。
+    """
     kws, wants = split_terms(keyword), want_cities(city)
     kw = kws[0] if kws else ""
+    per_page = 50
+    pages = pages or pages_for(max_items, per_page, cap=10)
     jobs, raw_n = [], 0
     for p in range(1, max(1, pages) + 1):
         try:
             d = requests.get(TENCENT_API, headers=H, timeout=25, params={
-                "keyword": kw, "pageIndex": p, "pageSize": 20, "language": "zh-cn"}).json()
+                "keyword": kw, "pageIndex": p, "pageSize": per_page, "language": "zh-cn"}).json()
             posts = ((d.get("Data") or {}).get("Posts") or [])
         except Exception as e:
             if diag is not None:
@@ -626,6 +669,7 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
             break
         if not posts:
             break
+        sleep_between_pages()
         for j in posts:
             raw_n += 1
             title, c = j.get("RecruitPostName") or "", j.get("LocationName") or ""
@@ -640,7 +684,7 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
                 jd=(duty + "\n\n任职要求：\n" + req).strip(),
                 hits=_kw_hits(f"{title} {duty} {req}", kws),
                 ch=city_hit(c, wants)))
-        if len(posts) < 20:
+        if len(posts) < per_page or len(jobs) >= max_items:
             break
     jobs.sort(key=lambda x: (-x["match_hits"], not x["city_hit"]))
     if diag is not None:
@@ -649,22 +693,34 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
 
 
 def search_netease(keyword: str = "", city: str = "", diag: dict = None,
-                   pages: int = 2) -> list:
-    """网易招聘公开接口（免登录）。JD 原文直接带在 requirement/description 里。"""
+                   pages: int = None, max_items: int = 200) -> list:
+    """网易招聘公开接口（免登录）。JD 原文直接带在 requirement/description 里。
+
+    ⚠️ 实测这个接口对同一关键词 total 能到 1011 条，而以前只翻 2 页拿 40 条
+    —— 这是"搜出来岗位太少"最大的一处欠抓。现在 pageSize=50、翻到 total 或 max_items。
+    """
     kws, wants = split_terms(keyword), want_cities(city)
     kw = kws[0] if kws else ""
+    per_page = 50
+    pages = pages or pages_for(max_items, per_page, cap=20)
     jobs, raw_n = [], 0
+    total = None
     for p in range(1, max(1, pages) + 1):
         try:
             d = requests.post(NETEASE_API, headers={**H, "Content-Type": "application/json"},
-                              timeout=25, json={"currentPage": p, "pageSize": 20, "keyword": kw}).json()
-            lst = ((d.get("data") or {}).get("list") or [])
+                              timeout=25, json={"currentPage": p, "pageSize": per_page,
+                                                "keyword": kw}).json()
+            dd = d.get("data") or {}
+            lst = (dd.get("list") or [])
+            if total is None:
+                total = dd.get("total") or dd.get("totalCount")
         except Exception as e:
             if diag is not None:
                 diag["api_error"] = f"第{p}页：{type(e).__name__}"
             break
         if not lst:
             break
+        sleep_between_pages()
         for j in lst:
             raw_n += 1
             title = j.get("name") or ""
@@ -680,11 +736,14 @@ def search_netease(keyword: str = "", city: str = "", diag: dict = None,
                 jd=(desc + "\n\n任职要求：\n" + req).strip(),
                 hits=_kw_hits(f"{title} {desc} {req}", kws),
                 ch=city_hit(c, wants)))
-        if len(lst) < 20:
+        if len(lst) < per_page or len(jobs) >= max_items:
+            break
+        if total and raw_n >= int(total):
             break
     jobs.sort(key=lambda x: (-x["match_hits"], not x["city_hit"]))
     if diag is not None:
-        diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants, "source_api": "公开接口"})
+        diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants, "source_api": "公开接口",
+                     "site_total": total})
     return jobs
 
 
@@ -859,9 +918,16 @@ def search_hn_hiring(keyword: str = "", city: str = "", diag: dict = None,
         if not hits:
             raise RuntimeError("没找到 Who is hiring 贴")
         story_id = hits[0]["objectID"]
-        c = fetch_json_or_text(HN_ALGOLIA + "/search", params={
-            "tags": "comment,story_%s" % story_id, "hitsPerPage": 200}).json()
-        comments = c.get("hits") or []
+        # 实测：这条招聘贴 nbHits=782、nbPages=8；以前只取 1 页 200 条 → 现在翻 3 页
+        comments = []
+        for page in range(0, 3):
+            c = fetch_json_or_text(HN_ALGOLIA + "/search", params={
+                "tags": "comment,story_%s" % story_id, "hitsPerPage": 100, "page": page}).json()
+            got = c.get("hits") or []
+            comments += got
+            if len(got) < 100:
+                break
+            sleep_between_pages()
     except Exception as e:
         if diag is not None:
             diag["api_error"] = str(e)[:80]
@@ -895,7 +961,7 @@ HN_STORY_TITLE = "Hacker News: Who is hiring（每月招聘贴）"
 
 
 def search_greenhouse(keyword: str = "", city: str = "", diag: dict = None,
-                      limit: int = 40) -> list:
+                      limit: int = 200) -> list:
     """官方 ATS 接口（Greenhouse）：直接读取公司挂在招聘系统上的**全部**职位。
 
     这是最正规的一类——公司自己开放的招聘 API，不是"爬"。名单见 ATS_COMPANIES，
@@ -904,6 +970,8 @@ def search_greenhouse(keyword: str = "", city: str = "", diag: dict = None,
     kws, wants = split_terms(keyword), want_cities(city)
     jobs, raw_n, failed = [], 0, []
     for slug, name in ATS_COMPANIES.items():
+        if len(jobs) >= limit:      # 已经够了就不再翻下一家公司
+            break
         try:
             d = fetch_json_or_text(GREENHOUSE_API % slug).json()
             lst = d.get("jobs") or []
@@ -931,8 +999,6 @@ def search_greenhouse(keyword: str = "", city: str = "", diag: dict = None,
                               hits=_kw_hits(title, kws), ch=city_hit(loc, wants)))
             if len(jobs) >= limit:
                 break
-        if len(jobs) >= limit:
-            break
     if diag is not None:
         diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants,
                      "source_api": "官方 ATS 接口",
@@ -1037,26 +1103,26 @@ def search_boss(keyword: str, city: str = "", ask_model=None,
 
 
 def search(source: str, keyword: str, city: str = "", ask_model=None,
-           diag: dict = None) -> list:
-    """统一入口。"""
+           diag: dict = None, max_items: int = 200) -> list:
+    """统一入口。max_items = 这个来源最多抓多少条（决定翻几页）。"""
     if source == "牛客":
-        return search_nowcoder(keyword, city, diag=diag)
+        return search_nowcoder(keyword, city, diag=diag, max_items=max_items)
     if source == "腾讯招聘":
-        return search_tencent(keyword, city, diag=diag)
+        return search_tencent(keyword, city, diag=diag, max_items=max_items)
     if source == "网易招聘":
-        return search_netease(keyword, city, diag=diag)
+        return search_netease(keyword, city, diag=diag, max_items=max_items)
     if source == "Remotive(远程)":
-        return search_remotive(keyword, city, diag=diag)
+        return search_remotive(keyword, city, diag=diag, limit=max_items)
     if source == "RemoteOK(远程)":
-        return search_remoteok(keyword, city, diag=diag)
+        return search_remoteok(keyword, city, diag=diag, limit=max_items)
     if source == "Arbeitnow(海外)":
-        return search_arbeitnow(keyword, city, diag=diag)
+        return search_arbeitnow(keyword, city, diag=diag, limit=max_items)
     if source == "WeWorkRemotely(远程)":
-        return search_wwr(keyword, city, diag=diag)
+        return search_wwr(keyword, city, diag=diag, limit=max_items)
     if source == "HN Who's Hiring(海外)":
-        return search_hn_hiring(keyword, city, diag=diag)
+        return search_hn_hiring(keyword, city, diag=diag, limit=max_items)
     if source == "Greenhouse-AI公司(海外)":
-        return search_greenhouse(keyword, city, diag=diag)
+        return search_greenhouse(keyword, city, diag=diag, limit=max_items)
     if source == "实习僧":
         return search_shixiseng(keyword, city or "", ask_model, diag=diag)
     if source == "BOSS直聘":
@@ -1081,7 +1147,7 @@ def boss_available() -> tuple:
 
 def search_all(keyword: str, city: str = "", ask_model=None,
                sources: list = None, strict_city: bool = True,
-               custom_url: str = "") -> dict:
+               custom_url: str = "", max_per_source: int = 200) -> dict:
     """一次搜索，把多个平台的结果合并去重。
 
     返回 {
@@ -1131,8 +1197,10 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     for src, _custom_url in tasks:
         d = {}
         try:
-            rows = (search_custom_feed(_custom_url, keyword, city, diag=d)
-                    if _custom_url else search(src, keyword, city, ask_model, diag=d))
+            rows = (search_custom_feed(_custom_url, keyword, city, diag=d, limit=max_per_source)
+                    if _custom_url
+                    else search(src, keyword, city, ask_model, diag=d,
+                                max_items=max_per_source))
             raw_by_src[src] = list(rows)
             # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
             counter = {}
