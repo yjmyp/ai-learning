@@ -33,7 +33,10 @@ learning/
 learn_rag/
 rag/
 scripts/
-docs/
+# 只忽略仓库根目录的 docs/ —— 写成 docs/ 会匹配任何层级的 docs 目录，
+# 导致 offeragent/docs/ 下**新加**的文件被静默忽略（踩过：新写的文档提交不上，
+# 和之前"根目录 Agent 模块没进仓库"是同一类坑）
+/docs/
 rag2/data/chroma/
 # ===== 2026-10-09 修正：下面这些是 app 运行时/CI 的必需文件，不能排除 =====
 # 上一轮"清理公开仓库"(a5f3cfa) 把它们一起排除了，导致云端 app 的
