@@ -230,6 +230,38 @@ def test_request_path_takes_slot():
     return held_at_send == [1]              # 发这一个请求时，正好占 1 个名额
 
 
+def test_search_guard():
+    """正在搜岗时，第二次调用要**立刻拒绝**，而不是默默排队（排队会让两边都更慢）。"""
+    js.CACHE_ENABLED = False
+    orig_wait, orig_search = js.SEARCH_LOCK_WAIT, js.search
+    js.SEARCH_LOCK_WAIT = 0.2
+
+    def slow_search(src, keyword, city="", ask_model=None, diag=None, **kw):
+        time.sleep(0.6)
+        return []
+
+    errors = []
+
+    def second_call():
+        time.sleep(0.05)          # 让第一次先拿到闸
+        try:
+            js.search_all("AI", "", sources=["牛客"])
+        except Exception as e:
+            errors.append(str(e))
+
+    js.search = slow_search
+    try:
+        t = threading.Thread(target=second_call)
+        t.start()
+        first = js.search_all("AI", "", sources=["牛客"])
+        t.join()
+    finally:
+        js.search, js.SEARCH_LOCK_WAIT = orig_search, orig_wait
+        js.CACHE_ENABLED = False
+    return (first["jobs"] == [] and len(errors) == 1
+            and "还没跑完" in errors[0])
+
+
 
 def test_browser_source_stays_serial():
     """要浏览器 + 大模型的来源（实习僧/BOSS）不许进线程池——ask_chat 依赖 Streamlit 会话状态。"""
@@ -262,6 +294,7 @@ def main():
         ("实习僧/BOSS 不进线程池（ask_chat 非线程安全）", test_browser_source_stays_serial()),
         ("全局名额池：最多的在飞请求数 = GLOBAL_INFLIGHT（勾几个来源都一样）", test_net_slot_budget()),
         ("真正发包的那一行确实占了名额（假 requests 观测）", test_request_path_takes_slot()),
+        ("同时只允许一次搜岗（第二次立刻拒绝，不排队）", test_search_guard()),
     ]
     ok_n = sum(1 for _, v in checks if v)
     for name, good in checks:

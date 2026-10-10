@@ -80,6 +80,36 @@ def main():
         ok, why = bf.desktop_available()
         checks.append(("本机判定为可用", ok is True))
 
+    # 5) 标签页回收：_new_tab 开的标签必须被关掉
+    #    （cdp.close() 关的是 websocket，不是标签页；以前实测攒到 52 个，
+    #     浏览器越来越慢，一次搜索从十几秒被拖到 150 秒以上）
+    closed = []
+
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"id": "x"}
+
+    orig_get = bf.requests.get
+    bf.requests.get = lambda url, **kw: (closed.append(url), _FakeResp())[1]
+    try:
+        ok_close = bf._close_tab("ws://127.0.0.1:9333/devtools/page/TARGET123")
+    finally:
+        bf.requests.get = orig_get
+    checks.append(("_close_tab 从 ws_url 取 targetId 并调 /json/close/<id>",
+                   bool(ok_close and closed and closed[-1].endswith("/json/close/TARGET123"))))
+
+    orig_ours, orig_close_id = bf.our_tabs, bf._close_tab_id
+    bf.our_tabs = lambda: [{"id": "t%d" % i} for i in range(20)]
+    gone = []
+    bf._close_tab_id = lambda tid: (gone.append(tid), True)[1]
+    try:
+        n = bf.close_stale_tabs(keep=4, max_before_clean=12)
+    finally:
+        bf.our_tabs, bf._close_tab_id = orig_ours, orig_close_id
+    checks.append(("堆积超阈值时只留 keep 个（20 个 → 关掉 %d 个）" % n, n == 16))
+
     ok_n = 0
     for cname, good in checks:
         print(("✅ " if good else "❌ ") + cname)

@@ -167,10 +167,60 @@ def launch(headless: bool = False) -> bool:
 
 def _new_tab(url: str) -> str:
     """新建标签页，返回它的 webSocketDebuggerUrl。"""
+    close_stale_tabs()          # 兜底：万一哪条路径没关成功，别让标签页无限堆
     r = requests.put(f"http://127.0.0.1:{DEBUG_PORT}/json/new?{url}", timeout=10)
     if r.status_code != 200:
         r = requests.get(f"http://127.0.0.1:{DEBUG_PORT}/json/new?{url}", timeout=10)
     return r.json()["webSocketDebuggerUrl"]
+
+
+# ---------- 标签页回收（踩过的坑，务必保留） ----------
+# `cdp.close()` 关的是 **websocket 连接**，不是标签页。以前每次抓页面都 _new_tab
+# 开一个新标签、却从来不关，实测能攒到 **52 个**（一次搜岗就 3~5 个），浏览器越来越慢：
+# 一次搜索从十几秒被拖到 150 秒以上，看起来像"卡死"。所以：
+#   1) 每个用到 _new_tab 的函数，finally 里除了 cdp.close() 还要 _close_tab(ws_url)
+#   2) _new_tab 之前兜底清理一次，防漏网
+OUR_TAB_MARKS = ("localhost:8501", "zhipin.com", "shixiseng.com", "nowcoder.com",
+                 "careers.tencent.com", "hr.163.com", "weworkremotely.com",
+                 "remoteok.com", "arbeitnow.com", "remotive.com", "greenhouse.io",
+                 "hn.algolia.com")
+
+
+def _close_tab_id(tid: str) -> bool:
+    if not tid:
+        return False
+    try:
+        r = requests.get(f"http://127.0.0.1:{DEBUG_PORT}/json/close/{tid}", timeout=5)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _close_tab(ws_url: str) -> bool:
+    """关掉 _new_tab 开出来的那个标签页（ws_url 末段就是 targetId）。"""
+    return _close_tab_id((ws_url or "").rstrip("/").rsplit("/", 1)[-1])
+
+
+def our_tabs() -> list:
+    """我们自己（抓取用）开出来的标签页，用来做回收。"""
+    try:
+        tabs = requests.get(f"http://127.0.0.1:{DEBUG_PORT}/json/list", timeout=5).json()
+    except Exception:
+        return []
+    return [t for t in tabs if t.get("type") == "page"
+            and any(m in (t.get("url") or "") for m in OUR_TAB_MARKS)]
+
+
+def close_stale_tabs(keep: int = 4, max_before_clean: int = 12) -> int:
+    """堆积超过 max_before_clean 个时，只留最近 keep 个，其余关掉。返回关掉几个。"""
+    ours = our_tabs()
+    if len(ours) <= max_before_clean:
+        return 0
+    n = 0
+    for t in ours[:max(0, len(ours) - keep)]:
+        if _close_tab_id(t.get("id", "")):
+            n += 1
+    return n
 
 
 class _CDP:
@@ -228,6 +278,7 @@ def js_on_page(url: str, expression: str, wait: float = 5.0,
         return res.get("result", {}).get("value")
     finally:
         cdp.close()
+        _close_tab(ws_url)      # 关 websocket 不够，标签页也要关（否则越攒越慢）
 
 
 def fetch_html(url: str, wait: float = 4.0, keep_open: bool = False) -> str:
@@ -246,6 +297,8 @@ def fetch_html(url: str, wait: float = 4.0, keep_open: bool = False) -> str:
         return res.get("result", {}).get("value", "")
     finally:
         cdp.close()
+        if not keep_open:
+            _close_tab(ws_url)
 
 
 def run_js(url: str, expression: str, wait: float = 4.0):
@@ -265,6 +318,7 @@ def run_js(url: str, expression: str, wait: float = 4.0):
         return res.get("result", {}).get("value")
     finally:
         cdp.close()
+        _close_tab(ws_url)
 
 
 def screenshot(url: str, out_path: str, wait: float = 6.0,
@@ -291,6 +345,7 @@ def screenshot(url: str, out_path: str, wait: float = 6.0,
         return out_path
     finally:
         cdp.close()
+        _close_tab(ws_url)
 
 
 if __name__ == "__main__":

@@ -235,21 +235,25 @@ def _nowcoder_api(keyword: str, pages: int = NOWCODER_PAGES):
 
     js = """
     (async function(){
-      var out = [], total = 0, done = 0;
+      var out = [], total = 0, done = 0, t0 = Date.now();
       for (var p = 1; p <= %d; p++) {
+        if (Date.now() - t0 > 60000) { break; }
         var body = 'requestFrom=1&page=' + p +
                    '&pageSize=20&recruitType=2&pageSource=5001%s';
+        var ctl = new AbortController();
+        var to = setTimeout(function(){ ctl.abort(); }, 12000);
         try {
           var r = await fetch('%s', {method: 'POST', credentials: 'include',
             headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
-            body: body});
+            body: body, signal: ctl.signal});
           var d = await r.json();
+          clearTimeout(to);
           var dd = (d && d.data) || {};
           if (dd.totalCount) { total = dd.totalCount; }
           if (dd.datas && dd.datas.length) { out = out.concat(dd.datas); done = p; }
           else { break; }
           if (dd.totalPage && p >= dd.totalPage) { break; }
-        } catch (e) { break; }
+        } catch (e) { clearTimeout(to); break; }
         await new Promise(function(res){ setTimeout(res, 300); });
       }
       return JSON.stringify({items: out, total: total, pages: done});
@@ -655,6 +659,17 @@ def _kw_hits(blob: str, kws: list) -> int:
 _PROXY_CACHE = "unset"
 
 
+def _dbg(msg: str):
+    """`JOBS_DEBUG=1` 时打一行调试日志（排查"搜岗卡住"用）。
+
+    为什么要它：Streamlit 里脚本出错只会给前端一个红框，**服务端日志默认什么都不写**，
+    于是"到底卡在哪个来源"完全靠猜。开着这个开关重启 app，日志里就能看到
+    每个来源的开始/结束/条数/耗时。
+    """
+    if os.environ.get("JOBS_DEBUG", "").strip() == "1":
+        print("[jobs] " + msg, flush=True)
+
+
 def _local_proxy():
     global _PROXY_CACHE
     if _PROXY_CACHE != "unset":
@@ -740,6 +755,9 @@ def _throttle(key: str, min_interval: float = PAGE_MIN_INTERVAL):
 
 GLOBAL_INFLIGHT = 3     # 同时在飞的网络请求总数上限（不管勾了几个来源、每源翻几页）
 _INFLIGHT = threading.BoundedSemaphore(GLOBAL_INFLIGHT)
+# 同一时刻只允许一次搜岗（见 search_all 的说明：Streamlit 重跑不会杀掉旧线程）
+_SEARCH_LOCK = threading.Lock()
+SEARCH_LOCK_WAIT = 5    # 等上一次搜岗让出闸最多等几秒（测试里会调小）
 
 
 class _NetSlot:
@@ -1284,16 +1302,141 @@ def search_custom_feed(url: str, keyword: str = "", city: str = "", diag: dict =
 # ============================================================
 # 4) BOSS：真实浏览器（复用登录态）→ 大模型抽
 # ============================================================
-def search_boss(keyword: str, city: str = "", ask_model=None,
-                diag: dict = None) -> list:
-    """走 browser_fetch（Edge 调试窗口）。需要先跑一次 setup 登录 BOSS。"""
-    if not ask_model:
-        raise RuntimeError("这个源需要 ask_model 才能解析")
+BOSS_API = "/wapi/zpgeek/search/joblist.json"      # BOSS 职位列表页自己调的接口
+# 实测：同一个会话翻到第 5~6 页时 BOSS 会回 {code:37, message:"您的环境存在异常."}
+# （放慢到 1.2 秒一页也一样，说明是它自己的会话级风控，不是我们发太快）。
+# 所以 BOSS 侧最多翻这么多页，够了就停；**不绕风控**——它说停就停，并把原因写进诊断。
+BOSS_MAX_PAGES = 5
+
+
+def _boss_api_js(city_code: str, kw: str, pages: int, per_page: int = 30) -> str:
+    """在已登录的 BOSS 页面里，翻页调它自己的搜索接口，把结果 JSON 带回来。
+
+    和牛客那套一个思路：**用浏览器替你发这个请求**，这样 cookie / Referer 一定是对的，
+    不用去逆向签名。请求是我们之外的用户主动点一次搜索才发，低频只读。
+
+    和牛客一样留了"**单页失败不要整体放弃**"：某页偶发失败就重试 1 次、仍失败就跳过
+    这页继续翻（实测第 6 页偶发失败会让整次搜索只剩 5 页 150 条）。
+
+    超时是三重的，因为实测踩过"整次搜索 150 秒没回来"：
+      · 单次 fetch 12 秒（AbortController）——页面里的 fetch 默认**没有超时**，
+        站点一挂就是直到 CDP 自己超时（150s）；
+      · 整轮 60 秒上限——超了就把已经拿到的先返回；
+      · Python 侧 CDP 调用 150 秒硬上限。
+    """
+    q = f"&query={quote(kw)}" if kw else ""
+    return """
+    (async function(){
+      var out = [], total = 0, done = 0, err = '', skipped = [], t0 = Date.now();
+      for (var p = 1; p <= %d; p++) {
+        if (Date.now() - t0 > 60000) { err = '整轮超时(60s)，已拿到的先返回'; break; }
+        var d = null;
+        for (var a = 0; a < 2; a++) {
+          var ctl = new AbortController();
+          var to = setTimeout(function(){ ctl.abort(); }, 12000);
+          try {
+            var r = await fetch('%s?scene=1&city=%s&page=' + p + '&pageSize=%d%s',
+                                {credentials: 'include', signal: ctl.signal});
+            d = await r.json();
+            clearTimeout(to);
+            break;
+          } catch (e) {
+            clearTimeout(to);
+            err = String(e);
+            await new Promise(function(res){ setTimeout(res, 600); });
+          }
+        }
+        if (!d) { skipped.push(p); continue; }
+        var z = (d && d.zpData) || {};
+        if (d.code !== 0) { err = d.message || 'code 异常'; break; }
+        if (z.resCount) { total = z.resCount; }
+        if (z.jobList && z.jobList.length) { out = out.concat(z.jobList); done = p; }
+        else { break; }
+        if (!z.hasMore) { break; }
+        await new Promise(function(res){ setTimeout(res, 350); });
+      }
+      return JSON.stringify({items: out, total: total, pages: done,
+                             skipped: skipped, err: err});
+    })()
+    """ % (pages, BOSS_API, city_code, per_page, q)
+
+
+def _boss_map(items: list, kws: list, wants: list, diag=None,
+              total=None, pages_done=None, pages_wanted=None,
+              skipped=None, err="") -> list:
+    """把 BOSS 接口的 jobList 映射成我们的字段（结构化，不用大模型）。"""
+    jobs = []
+    for j in items:
+        title = (j.get("jobName") or "").strip()
+        if not title:
+            continue
+        brand = (j.get("brandName") or "").strip()
+        c = (j.get("cityName") or "").strip()
+        area = "·".join(x for x in [j.get("areaDistrict"), j.get("businessDistrict")] if x)
+        city_full = f"{c}·{area}" if (c and area) else (c or area)
+        skills = "、".join(j.get("skills") or [])
+        labels = "、".join(j.get("jobLabels") or [])
+        welfare = "、".join(j.get("welfareList") or [])
+        jid = j.get("encryptJobId") or ""
+        url = f"https://www.zhipin.com/job_detail/{jid}.html" if jid else ""
+        boss = " ".join(x for x in [str(j.get("bossName") or ""), str(j.get("bossTitle") or "")] if x)
+        extra = " | ".join(x for x in [brand, j.get("brandIndustry"),
+                                       j.get("brandScaleName"), boss, labels] if x)
+        jd = "\n".join(x for x in [
+            f"岗位：{title}",
+            f"公司：{brand}" if brand else "",
+            f"经验/学历：{labels}" if labels else "",
+            f"技能关键词：{skills}" if skills else "",
+            f"福利：{welfare}" if welfare else "",
+            "（BOSS 接口不返回 JD 正文；点开链接看详情，或入库时让程序去抓详情页）",
+        ] if x)
+        jobs.append(_pack(title, brand, city_full, j.get("salaryDesc") or "", url, "BOSS直聘",
+                          extra=extra[:120], jd=jd,
+                          hits=_kw_hits(f"{title} {skills} {labels}", kws),
+                          ch=city_hit(city_full, wants)))
+    jobs.sort(key=lambda x: (-x["match_hits"], not x["city_hit"]))
+    if diag is not None:
+        diag.update({"raw": len(items), "kept": len(jobs), "cities": wants,
+                     "source_api": "站点搜索接口（复用本机登录态，只读）",
+                     "site_total": total, "api_pages": pages_done,
+                     "note": "BOSS 职位页自己调的接口；每页 30 条、支持翻页"})
+        if pages_wanted:
+            diag["api_pages_wanted"] = pages_wanted
+        if skipped:
+            diag["api_skipped_pages"] = skipped
+        if err:
+            diag["api_note"] = str(err)[:120]
+        try:
+            if total and len(items) < int(total):
+                diag["boss_limit"] = (
+                    "BOSS 风控：单次大约只给 %d 页（约 %d 条），站点总数 %s 更多但拿不到；"
+                    "这是它自己的限制，我们不绕（想再多就换关键词/城市分次搜）。"
+                    % (BOSS_MAX_PAGES, BOSS_MAX_PAGES * 30, total))
+        except Exception:
+            pass
+    return jobs
+
+
+def search_boss(keyword: str = "", city: str = "", ask_model=None,
+                diag: dict = None, max_items: int = 200) -> list:
+    """BOSS直聘：在**本机已登录的 Edge** 里调它自己的搜索接口（先跑一次 setup 登录）。
+
+    为什么从"抓页面文本 → 大模型抽"改成调接口（2026-10-10 实测的事故）：
+      用户搜「AI + 南京」时 BOSS 返回 **0 条**。查下来不是网络问题——
+      URL 里明明写了 city=101190100（南京），但页面返回的全是**德阳**岗位：
+      BOSS 前端会用它自己记的"上次选中城市"覆盖 URL 参数，而这个 Edge 独立 profile
+      里记着德阳（正是当初测"未收录城市"时留下的）。结果客户端严格城市过滤
+      把德阳岗位全砍掉 → 0 条。
+    改成接口之后：城市完全由参数决定，返回结构化 JSON（薪资/经验/学历/技能/公司/招聘者），
+    **不用大模型抽**、支持翻页。实测「AI + 南京」resCount=450、每页 30 条、hasMore=true。
+    接口万一失败，仍然退回老的"页面文本 + 大模型"那条路（并在诊断里说明它会踩城市覆盖）。
+    """
     import browser_fetch as bf
     ok, why = bf.desktop_available()
     if not ok:
         raise RuntimeError(why)
-    kw_first = split_terms(keyword)[0] if split_terms(keyword) else ""
+    kws, wants = split_terms(keyword), want_cities(city)
+    kw_first = kws[0] if kws else ""
     city_first = split_terms(city)[0] if split_terms(city) else "全国"
     city_code = BOSS_CITY_CODES.get(city_first)
     if not city_code:
@@ -1304,9 +1447,41 @@ def search_boss(keyword: str, city: str = "", ask_model=None,
                 f"BOSS 城市表里没有「{city_first}」，已按「全国」检索；"
                 "可在支持的城市里重选（北京/上海/广州/深圳/杭州/南京/苏州/成都/"
                 "武汉/西安/长沙/重庆/天津/郑州/青岛/厦门/合肥/济南等 40+ 城市）。")
-    url = (f"https://www.zhipin.com/web/geek/job?query={quote(kw_first)}"
-           f"&city={city_code}")
-    html = bf.fetch_html(url, wait=6)
+    page_url = (f"https://www.zhipin.com/web/geek/job?query={quote(kw_first)}"
+                f"&city={city_code}")
+    per_page = 30
+    pages = min(pages_for(max_items, per_page, cap=15), BOSS_MAX_PAGES)
+    data = {}
+    _dbg("BOSS：调接口 %s（城市码 %s，%d 页）" % (page_url, city_code, pages))
+    _t0 = time.perf_counter()
+    try:
+        raw = bf.js_on_page(page_url, _boss_api_js(city_code, kw_first, pages, per_page),
+                            wait=6, timeout=150)
+        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception as e:
+        _dbg("BOSS 接口异常：%.1fs %s" % (time.perf_counter() - _t0, str(e)[:160]))
+        data = {"items": [], "err": f"{type(e).__name__}: {str(e)[:120]}"}
+    items = data.get("items") or []
+    _dbg("BOSS 接口回来：%.1fs，%d 条（页 %s/%s，err=%s）"
+         % (time.perf_counter() - _t0, len(items), data.get("pages"), pages,
+            str(data.get("err") or "")[:60]))
+    if items:
+        jobs = _boss_map(items, kws, wants, diag, total=data.get("total"),
+                         pages_done=data.get("pages"), pages_wanted=pages,
+                         skipped=data.get("skipped"), err=data.get("err") or "")
+        if jobs:
+            return jobs
+    # ---- 兜底：老路（抓页面文本 → 大模型抽） ----
+    if diag is not None:
+        diag["api_fallback"] = ("接口没拿到岗位（%s），改用页面文本+大模型抽取"
+                                % (data.get("err") or "空结果"))
+        diag["api_fallback_note"] = ("注意：这条路会被 BOSS 自己记的城市覆盖 URL 参数，"
+                                     "返回的城市可能和你选的不一致（接口那条路没这个问题）")
+    if not ask_model:
+        if diag is not None:
+            diag["api_error"] = "接口空结果，且没有 ask_model，无法兜底抽取"
+        return []
+    html = bf.fetch_html(page_url, wait=8)
     text = html_to_text(html)
     head = text[:1000]
     if "登录" in head and "职位" not in text:
@@ -1339,7 +1514,7 @@ def search(source: str, keyword: str, city: str = "", ask_model=None,
     if source == "实习僧":
         return search_shixiseng(keyword, city or "", ask_model, diag=diag)
     if source == "BOSS直聘":
-        return search_boss(keyword, city or "", ask_model, diag=diag)
+        return search_boss(keyword, city or "", ask_model, diag=diag, max_items=max_items)
     raise ValueError(f"未知来源：{source}")
 
 
@@ -1499,6 +1674,33 @@ def search_all(keyword: str, city: str = "", ask_model=None,
                sources: list = None, strict_city: bool = True,
                custom_url: str = "", max_per_source: int = 200,
                use_cache: bool = True) -> dict:
+    """搜岗的公开入口：**同一时刻只允许一次**，其余细节见 _search_all_impl()。
+
+    为什么要这道闸：Streamlit 里用户换一次交互就会重跑脚本，但**上一次运行里已经
+    在发请求的线程不会被杀掉**（Python 线程杀不掉）。用户手快点两下「开始搜岗」，
+    两次搜索会同时抢那 3 个全局在飞名额，两边都变慢——实测能把一次搜索拖到 3 分钟
+    以上，看起来就像"卡死了"。所以第二次直接拒绝并说清楚，而不是默默排队。
+    """
+    if not _SEARCH_LOCK.acquire(timeout=SEARCH_LOCK_WAIT):
+        raise RuntimeError(
+            "上一次搜岗还没跑完（请求已经发出去了），等结果出来再点。"
+            "连着点两次会让同一批请求排队跑两遍，只会更慢。")
+    _t0 = time.perf_counter()
+    _dbg("搜岗开始：关键词=%r 城市=%r 来源=%s 上限=%s" % (keyword, city, sources, max_per_source))
+    try:
+        res = _search_all_impl(keyword, city, ask_model, sources, strict_city,
+                               custom_url, max_per_source, use_cache)
+        _dbg("搜岗结束：%.1fs，合并 %d 条 %s" % (time.perf_counter() - _t0,
+                                               len(res.get("jobs") or []), res.get("by_source")))
+        return res
+    finally:
+        _SEARCH_LOCK.release()
+
+
+def _search_all_impl(keyword: str, city: str = "", ask_model=None,
+                     sources: list = None, strict_city: bool = True,
+                     custom_url: str = "", max_per_source: int = 200,
+                     use_cache: bool = True) -> dict:
     """一次搜索，把多个平台的结果合并去重。
 
     use_cache=True 时：同一「来源+关键词+城市+每源上限」10 分钟内直接复用上次结果
@@ -1561,6 +1763,7 @@ def search_all(keyword: str, city: str = "", ask_model=None,
         """
         src, _cu = task
         d = {}
+        _t0 = time.perf_counter()
         try:
             rows = None
             if use_cache and not _cu:              # 自定义来源不缓存（地址就是变量）
@@ -1578,14 +1781,19 @@ def search_all(keyword: str, city: str = "", ask_model=None,
                     if use_cache:
                         cache_put(src, keyword, city, max_per_source, rows)
                         d["cache"] = "未命中缓存，这次联网抓取（%d 条已写入缓存）" % len(rows)
+            _dbg("来源 %s 完成：%d 条，%.1fs%s" % (src, len(rows),
+                                                  time.perf_counter() - _t0,
+                                                  "（命中缓存）" if rows is not None and d.get("cache", "").startswith("命中") else ""))
             return list(rows), d, ""
         except Exception as e:
+            _dbg("来源 %s 失败：%.1fs %s" % (src, time.perf_counter() - _t0, str(e)[:120]))
             return [], d, str(e)[:200]
 
     # ---- 抓取：纯 HTTP 的来源并发跑；要浏览器/大模型的留在主线程串行 ----
     fetched = {}
     safe = [t for t in tasks if _parallel_safe(t)]
     slow = [t for t in tasks if not _parallel_safe(t)]
+    _dbg("开始抓取：并发 %d 个纯 HTTP 来源 %s；串行 %s" % (len(safe), safe, slow))
     if len(safe) > 1:
         with ThreadPoolExecutor(max_workers=min(SOURCE_WORKERS, len(safe))) as ex:
             for task, got in zip(safe, ex.map(fetch_task, safe)):   # map 保序
