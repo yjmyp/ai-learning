@@ -124,58 +124,67 @@ def page_jobs():
 
     # ---- 关键词搜岗 ----
     with tab_search:
-        st.caption("给关键词和城市，程序自己去多个招聘站搜岗位并合并去重，勾选后一键入库。"
-                   "默认走「全部平台」，一次把牛客＋实习僧＋BOSS 的结果全捞回来。")
-        c1, c2, c3 = st.columns([2, 2, 2])
-        kw = c1.text_input("关键词（可以写多个，用空格或逗号分开）", value="AI",
-                           key="src_kw",
-                           placeholder="AI 大模型 算法 / Agent,RAG")
-        city = c2.text_input("城市（也可以写多个）", value="", key="src_city",
-                             placeholder="南京 上海 / 不填默认全国")
-        _boss_ok, _boss_why = job_sources.boss_available()
-        _src_opts = [job_sources.ALL_SOURCES] + [
-            s for s in job_sources.SOURCES if s != "BOSS直聘" or _boss_ok]
-        src = c3.selectbox("来源", _src_opts, key="src_name")
-        st.caption("牛客最快最稳；实习僧是实验性（偶尔拿不到详情）。")
-        if _boss_ok:
-            st.caption("BOSS 直聘走你**本机已登录的浏览器**：第一次要在终端跑一次 "
-                       "`python -m browser_fetch --setup`，在弹出的窗口里登录 BOSS。")
-            if st.button("🪟 帮我打开 BOSS 登录窗口（本机）", key="boss_setup"):
-                import browser_fetch as _bf
-                if _bf.launch(headless=False):
-                    st.success("已打开调试窗口：在里面登录 BOSS 直聘，登录后**别关这个窗口**，"
-                               "回来点「开始搜岗」即可。")
-                else:
-                    st.error("窗口启动失败：" + _bf.no_browser_message()[:200])
-        else:
-            st.warning("BOSS 直聘这次用不了，原因：" + str(_boss_why)[:300])
+        st.caption("填关键词 + 选城市，点一次就搜完所有来源并合并去重。"
+                   "默认只搜**不用登录**的来源（云端也能跑）。")
+        c1, c2 = st.columns([2, 3])
+        kw = c1.text_input("关键词（可写多个，用空格或逗号分开）", value="AI",
+                           key="src_kw", placeholder="AI 大模型 Agent,RAG")
+        cities = c2.multiselect("城市（可多选；远程=海外 remote 岗位）", job_sources.COMMON_CITIES,
+                                default=["南京"], accept_new_options=True, key="src_cities",
+                                help="也能直接输入表里没有的城市（回车确认）。留空 = 全国。")
+        c3, c4 = st.columns([3, 2])
+        picked_sources = c3.multiselect(
+            "来源", job_sources.SOURCES, default=job_sources.NO_LOGIN_SOURCES,
+            key="src_sources",
+            help="牛客/腾讯/网易/Remotive 是公开接口，免登录；实习僧要本机浏览器；BOSS 要本机登录。")
+        strict_city = c4.toggle("只要命中城市的岗位", value=True, key="src_strict",
+                                help="打开：城市不匹配的直接不显示（推荐）。"
+                                     "如果所有来源都没有该城市的岗位，会自动放宽并提示。")
+        city = " ".join(cities)
         if st.button("🔍 开始搜岗", type="primary", key="do_search"):
-            with st.spinner(f"正在搜「{kw}」…（多平台要等十几秒）"):
-                try:
-                    if src == job_sources.ALL_SOURCES:
+            if not picked_sources:
+                st.warning("至少选一个来源")
+            else:
+                with st.spinner(f"正在搜「{kw}」…（多平台十几秒）"):
+                    try:
                         res = job_sources.search_all(
-                            kw.strip(), city.strip(),
-                            ask_model=lambda p: ask_chat(p))
+                            kw.strip(), city.strip(), ask_model=lambda p: ask_chat(p),
+                            sources=list(picked_sources), strict_city=bool(strict_city))
                         st.session_state["src_results"] = res["jobs"]
                         st.session_state["src_stats"] = res["by_source"]
                         st.session_state["src_errors"] = res["errors"]
                         st.session_state["src_diag"] = res.get("diag", {})
-                    else:
-                        _d = {}
-                        found = job_sources.search(
-                            src, kw.strip(), city.strip(),
-                            ask_model=lambda p: ask_chat(p), diag=_d)
-                        st.session_state["src_results"] = found
-                        st.session_state["src_stats"] = {src: len(found)}
-                        st.session_state["src_errors"] = {}
-                        st.session_state["src_diag"] = {src: _d}
-                except Exception as e:
-                    st.session_state["src_results"] = []
-                    st.error(str(e))
+                        st.session_state["src_cities"] = res.get("cities", {})
+                        st.session_state["src_relaxed"] = res.get("relaxed", {})
+                        st.session_state["src_city_miss"] = res.get("city_miss", {})
+                        st.session_state["src_relaxed_all"] = res.get("relaxed_all", False)
+                        st.session_state["src_wants"] = res.get("wants", [])
+                    except Exception as e:
+                        st.session_state["src_results"] = []
+                        st.error(str(e))
         stats = st.session_state.get("src_stats") or {}
         errors = st.session_state.get("src_errors") or {}
+        wants = st.session_state.get("src_wants") or []
         if stats:
-            st.caption("各平台结果：" + "　".join(f"{k} {v} 条" for k, v in stats.items()))
+            st.markdown("**各来源命中：**" + "　".join(
+                f"{k} **{v}** 条" for k, v in stats.items()))
+            if wants:
+                st.caption("城市条件：" + "、".join(wants)
+                           + ("（严格：不匹配的不显示）" if st.session_state.get("src_relaxed") is not None
+                              and st.session_state.get("src_strict") else ""))
+            if st.session_state.get("src_relaxed_all"):
+                st.warning("⚠️ 这次**所有来源都没有**你选的城市岗位，已自动放宽为「全国结果」——"
+                           "下面的岗位都不是你选的城市，注意看城市列。")
+            miss = st.session_state.get("src_city_miss") or {}
+            if miss:
+                detail = "；".join(f"{k} {v} 条全被过滤" for k, v in miss.items())
+                st.info("这些来源这次没有你选的城市岗位：" + detail
+                        + "　（它们的岗位城市见下面「抓取诊断」）")
+            cdist = st.session_state.get("src_cities") or {}
+            if cdist:
+                with st.expander("📍 各来源这次捞回来的城市分布（解释为什么结果少）"):
+                    for s, rows in cdist.items():
+                        st.markdown(f"- **{s}**：" + "、".join(f"{c} {n}" for c, n in rows))
         _diag = st.session_state.get("src_diag") or {}
         if _diag:
             with st.expander("🔬 抓取诊断（岗位为什么只有这些？）"):
