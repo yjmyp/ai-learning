@@ -20,10 +20,21 @@ _env_docs = os.environ.get("RAG2_DOCS_DIRS", "").strip()
 if _env_docs:
     DOCS_DIRS = [p for p in _env_docs.split(os.pathsep) if p.strip()]
 else:
-    DOCS_DIRS = [
+    # 默认语料：本地优先私人笔记（存在才用），云端/兜底用仓库内公开文档——
+    # 学习笔记/rag notes 已移出公开仓库，云端 /mount/src 里不存在，必须回退到公开 docs，
+    # 否则 RAG 引擎在云端启动时「没有找到可入库的资料」直接崩溃。
+    _local_dirs = [
         os.path.join(REPO_ROOT, "学习笔记"),
         os.path.join(REPO_ROOT, "rag", "notes"),
     ]
+    _public_dirs = [
+        os.path.join(REPO_ROOT, "offeragent", "docs"),
+        os.path.join(REPO_ROOT, "rag2", "docs"),
+        os.path.join(REPO_ROOT, "java-api"),
+    ]
+    DOCS_DIRS = [d for d in _local_dirs + _public_dirs if os.path.isdir(d)]
+    if not DOCS_DIRS:
+        DOCS_DIRS = _public_dirs
 
 # Chroma 持久化目录（云端可设 RAG2_CHROMA_DIR 指向可写目录）
 if os.environ.get("RAG2_CHROMA_DIR"):
