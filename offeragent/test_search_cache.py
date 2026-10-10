@@ -169,6 +169,68 @@ def test_cross_source_parallel():
     return dt < 0.6 and order_ok and len(r["jobs"]) == 3
 
 
+class _CountingSem(threading.BoundedSemaphore):
+    """给 BoundedSemaphore 记一笔"当前占用了几个"，用来验证全局名额池真的生效。"""
+
+    def __init__(self, value):
+        super().__init__(value)
+        self.held = 0
+        self.peak = 0
+
+    def acquire(self, *a, **k):
+        got = super().acquire(*a, **k)
+        if got:
+            self.held += 1
+            self.peak = max(self.peak, self.held)
+        return got
+
+    def release(self):
+        self.held -= 1
+        return super().release()
+
+
+def test_net_slot_budget():
+    """全局名额池：不管起多少线程，同时在飞的数量不许超过 GLOBAL_INFLIGHT。"""
+    orig = js._INFLIGHT
+    sem = _CountingSem(js.GLOBAL_INFLIGHT)
+    js._INFLIGHT = sem
+    try:
+        def one():
+            with js._NetSlot():
+                time.sleep(0.05)
+        threads = [threading.Thread(target=one) for _ in range(9)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        js._INFLIGHT = orig
+    return 2 <= sem.peak <= js.GLOBAL_INFLIGHT and sem.held == 0
+
+
+def test_request_path_takes_slot():
+    """真正发包的那一行确实占了名额（用假 requests 观察：请求发出时名额已占用）。"""
+    orig_sem, orig_post = js._INFLIGHT, js.requests.post
+    sem = _CountingSem(js.GLOBAL_INFLIGHT)
+    held_at_send = []
+
+    class _FakeResp:
+        def json(self):
+            return {"code": 0, "data": {"datas": [], "totalCount": 0}}
+
+    def fake_post(url, **kw):
+        held_at_send.append(sem.held)       # 发包这一刻占着几个名额
+        return _FakeResp()
+
+    js._INFLIGHT, js.requests.post = sem, fake_post
+    try:
+        js._nowcoder_fetch_page(1, "&query=AI", 20)
+    finally:
+        js._INFLIGHT, js.requests.post = orig_sem, orig_post
+    return held_at_send == [1]              # 发这一个请求时，正好占 1 个名额
+
+
+
 def test_browser_source_stays_serial():
     """要浏览器 + 大模型的来源（实习僧/BOSS）不许进线程池——ask_chat 依赖 Streamlit 会话状态。"""
     js.CACHE_ENABLED = False
@@ -198,6 +260,8 @@ def main():
         ("search_all 第二次同条件命中缓存、不再联网", test_search_all_uses_cache()),
         ("跨来源并发：纯 HTTP 三个来源并行、输出顺序仍按 sources", test_cross_source_parallel()),
         ("实习僧/BOSS 不进线程池（ask_chat 非线程安全）", test_browser_source_stays_serial()),
+        ("全局名额池：最多的在飞请求数 = GLOBAL_INFLIGHT（勾几个来源都一样）", test_net_slot_budget()),
+        ("真正发包的那一行确实占了名额（假 requests 观测）", test_request_path_takes_slot()),
     ]
     ok_n = sum(1 for _, v in checks if v)
     for name, good in checks:

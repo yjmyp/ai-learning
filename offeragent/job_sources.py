@@ -190,7 +190,8 @@ def search_nowcoder(keyword: str = "", city: str = "", strict: bool = False,
     # 牛客这个页面偶尔不带结构化数据（CDN 差异），所以重试 3 次，再不行就上浏览器
     for _ in range(3):
         try:
-            text = requests.get(url, headers=H, timeout=25).text
+            with _NetSlot():
+                text = requests.get(url, headers=H, timeout=25).text
         except Exception:
             text = ""
         if re.search(pat, text, re.S):
@@ -339,7 +340,8 @@ def _nowcoder_fetch_page(p: int, q: str, per_page: int = 20):
             # 超时 12 秒：实测正常页 0.5~0.8 秒就回来，而站点偶发"整页不响应"——
             # 那种卡顿会一直挂到超时为止（曾观测到 20.87s = 正好撞上原来的 20s 超时，
             # 两次尝试都挂就是 40.13s）。12 秒足够宽松，又能把最坏情况从 41 秒压到 25 秒。
-            r = requests.post(url, data=body, headers=NOWCODER_HEADERS, timeout=12)
+            with _NetSlot():        # 占一个全局在飞名额
+                r = requests.post(url, data=body, headers=NOWCODER_HEADERS, timeout=12)
             d = r.json()
         except Exception as e:
             err = str(e)[:120]
@@ -583,7 +585,8 @@ def fetch_job_detail(url: str, ask_model=None, use_browser: bool = True) -> str:
             html = ""
     if len(html) < 3000:
         try:
-            html = requests.get(url, headers=H, timeout=25).text
+            with _NetSlot():
+                html = requests.get(url, headers=H, timeout=25).text
         except Exception:
             pass
     if not html:
@@ -614,7 +617,8 @@ def search_shixiseng(keyword: str, city: str = "南京", ask_model=None,
         html = ""
     if len(html) < 5000:  # 浏览器没成功就退回直连
         try:
-            html = requests.get(url, headers=H, timeout=25).text
+            with _NetSlot():
+                html = requests.get(url, headers=H, timeout=25).text
         except Exception:
             pass
     if not html:
@@ -682,8 +686,9 @@ def fetch_json_or_text(url: str, method: str = "GET", timeout: int = 30, **kwarg
     for proxies in (None, _local_proxy()):
         try:
             fn = requests.get if method.upper() == "GET" else requests.post
-            r = fn(url, headers=kwargs.pop("headers", H), timeout=timeout,
-                   proxies=proxies, **kwargs)
+            with _NetSlot():        # 占一个全局在飞名额（真正发包的这一行）
+                r = fn(url, headers=kwargs.pop("headers", H), timeout=timeout,
+                       proxies=proxies, **kwargs)
             if r.status_code == 200:
                 return r
             last = f"HTTP {r.status_code}"
@@ -731,6 +736,33 @@ def _throttle(key: str, min_interval: float = PAGE_MIN_INTERVAL):
                 _LAST_HIT[key] = time.time()
                 return
         time.sleep(min(wait, 0.2))
+
+
+GLOBAL_INFLIGHT = 3     # 同时在飞的网络请求总数上限（不管勾了几个来源、每源翻几页）
+_INFLIGHT = threading.BoundedSemaphore(GLOBAL_INFLIGHT)
+
+
+class _NetSlot:
+    """`with _NetSlot():` 占一个"全局在飞名额"，出来就还。
+
+    为什么值得有：跨来源并发之后，3 个来源 × 每源 3 页 = 最多 9 条连接同时在飞。
+    按站点分摊确实每站还是 3 条、间隔也够，但**总连接数**会随"勾了几个来源"线性增长。
+    有了这个名额池，"同时最多几条连接"就是一个固定常数：勾 3 个来源和勾 10 个来源，
+    对网络的压力一样，代价只是总耗时随来源数变长（这是该付的成本）。
+
+    ⚠️ 用法约束：**只在真正发包的那一行占名额**（requests.get/post、fetch_json_or_text）。
+    不要在 parallel_pages / fetch_task 里再包一层——那里会出现"已经拿着名额的线程再去
+    申请名额"，同一个信号量嵌套申请会**直接死锁**（三个线程各拿 1 个再各等 1 个，
+    谁都动不了）。所以名额只加在最底层。
+    """
+
+    def __enter__(self):
+        _INFLIGHT.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        _INFLIGHT.release()
+        return False
 
 
 def parallel_pages(fetch_one, pages: int, workers: int = SEARCH_WORKERS,
@@ -812,9 +844,10 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
 
     def fetch(p):
         try:
-            d = requests.get(TENCENT_API, headers=H, timeout=25, params={
-                "keyword": kw, "pageIndex": p, "pageSize": per_page,
-                "language": "zh-cn"}).json()
+            with _NetSlot():        # 占一个全局在飞名额
+                d = requests.get(TENCENT_API, headers=H, timeout=25, params={
+                    "keyword": kw, "pageIndex": p, "pageSize": per_page,
+                    "language": "zh-cn"}).json()
             return "ok", ((d.get("Data") or {}).get("Posts") or [])
         except Exception as e:
             return "skip", f"第{p}页：{type(e).__name__}"
@@ -867,9 +900,10 @@ def search_netease(keyword: str = "", city: str = "", diag: dict = None,
 
     def fetch(p):
         try:
-            d = requests.post(NETEASE_API, headers={**H, "Content-Type": "application/json"},
-                              timeout=25, json={"currentPage": p, "pageSize": per_page,
-                                                "keyword": kw}).json()
+            with _NetSlot():        # 占一个全局在飞名额
+                d = requests.post(NETEASE_API, headers={**H, "Content-Type": "application/json"},
+                                  timeout=25, json={"currentPage": p, "pageSize": per_page,
+                                                    "keyword": kw}).json()
             dd = d.get("data") or {}
             return "ok", (dd.get("list") or []), (dd.get("total") or dd.get("totalCount"))
         except Exception as e:
@@ -919,8 +953,9 @@ def search_remotive(keyword: str = "", city: str = "", diag: dict = None,
     kws, wants = split_terms(keyword), want_cities(city)
     kw = kws[0] if kws else ""
     try:
-        d = requests.get(REMOTIVE_API, headers=H, timeout=25,
-                         params={"search": kw, "limit": limit}).json()
+        with _NetSlot():            # 占一个全局在飞名额
+            d = requests.get(REMOTIVE_API, headers=H, timeout=25,
+                             params={"search": kw, "limit": limit}).json()
         lst = d.get("jobs") or []
     except Exception as e:
         if diag is not None:
