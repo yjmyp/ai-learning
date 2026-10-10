@@ -15,10 +15,7 @@ java-api/target/
 # rag2 运行期产物（trace 日志每次问答都在长，不该入库）
 rag2/data/trace.jsonl
 rag2/data/trace*.jsonl
-姹傝亴鎶曢€?candidate_profile.json
 
-瀛︿範绗旇/浜ゆ帴鏂囨。-20260919.md
-瀛︿範绗旇/浜ゆ帴鏂囨。*
 
 # OfferAgent 数据与备份（隐私/体积，不入库）
 offeragent/data/
@@ -58,7 +55,6 @@ eval_agent.py
 eval_match_consistency.py
 make_code_pack.py
 run_rag2.ps1
-requirements.txt
 agent_cli.py
 # 简历历史版本（只保留 v11 + 正式投递三件套）
 简历/简历生成器.html
@@ -88,4 +84,5 @@ offeragent/docs/给DeepSeek的项目速览.md
 简历/余剑-简历-AI应用开发实习-v5.md
 简历/余剑-简历-AI应用开发实习-v8.md
 简历/照片.jpg
+agent_resume.py
 .tmp_remote/
