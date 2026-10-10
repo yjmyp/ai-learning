@@ -23,10 +23,26 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 H = {"User-Agent": UA}
 
 BOSS_CITY_CODES = {
-    "全国": "100010000", "北京": "101010100", "上海": "101020100",
-    "广州": "101280100", "深圳": "101280600", "杭州": "101210100",
-    "南京": "101190100", "苏州": "101190400", "成都": "101270100",
-    "武汉": "101200100", "西安": "101110100", "长沙": "101250100",
+    "全国": "100010000",
+    # 直辖市
+    "北京": "101010100", "上海": "101020100", "天津": "101030100", "重庆": "101040100",
+    # 华东
+    "南京": "101190100", "无锡": "101190200", "苏州": "101190400",
+    "杭州": "101210100", "宁波": "101210400", "温州": "101210700",
+    "合肥": "101220100", "福州": "101230100", "厦门": "101230200",
+    "南昌": "101240100", "济南": "101120100", "青岛": "101120200",
+    # 华北 / 东北
+    "石家庄": "101090100", "太原": "101100100", "呼和浩特": "101080100",
+    "哈尔滨": "101050100", "长春": "101060100", "沈阳": "101070100",
+    # 华中 / 华南
+    "郑州": "101180100", "武汉": "101200100", "长沙": "101250100",
+    "广州": "101280100", "深圳": "101280600", "佛山": "101280800",
+    "东莞": "101281600", "珠海": "101280700", "南宁": "101300100",
+    "海口": "101310100",
+    # 西北 / 西南
+    "西安": "101110100", "兰州": "101160100", "银川": "101170100",
+    "西宁": "101150100", "乌鲁木齐": "101130100",
+    "成都": "101270100", "贵阳": "101260100", "昆明": "101290100",
 }
 
 SOURCES = ["牛客", "实习僧", "BOSS直聘"]
@@ -444,7 +460,7 @@ def search_shixiseng(keyword: str, city: str = "南京", ask_model=None,
 # ============================================================
 # 4) BOSS：真实浏览器（复用登录态）→ 大模型抽
 # ============================================================
-def search_boss(keyword: str, city: str = "南京", ask_model=None,
+def search_boss(keyword: str, city: str = "", ask_model=None,
                 diag: dict = None) -> list:
     """走 browser_fetch（Edge 调试窗口）。需要先跑一次 setup 登录 BOSS。"""
     if not ask_model:
@@ -454,8 +470,16 @@ def search_boss(keyword: str, city: str = "南京", ask_model=None,
     if not ok:
         raise RuntimeError(why)
     kw_first = split_terms(keyword)[0] if split_terms(keyword) else ""
-    city_first = split_terms(city)[0] if split_terms(city) else "南京"
-    city_code = BOSS_CITY_CODES.get(city_first, "101190100")
+    city_first = split_terms(city)[0] if split_terms(city) else "全国"
+    city_code = BOSS_CITY_CODES.get(city_first)
+    if not city_code:
+        # 城市表里没有：不偷换成别的城市，回退「全国」并在诊断里说清楚
+        city_code = "100010000"
+        if diag is not None:
+            diag["boss_city_fallback"] = (
+                f"BOSS 城市表里没有「{city_first}」，已按「全国」检索；"
+                "可在支持的城市里重选（北京/上海/广州/深圳/杭州/南京/苏州/成都/"
+                "武汉/西安/长沙/重庆/天津/郑州/青岛/厦门/合肥/济南等 40+ 城市）。")
     url = (f"https://www.zhipin.com/web/geek/job?query={quote(kw_first)}"
            f"&city={city_code}")
     html = bf.fetch_html(url, wait=6)
@@ -473,9 +497,9 @@ def search(source: str, keyword: str, city: str = "", ask_model=None,
     if source == "牛客":
         return search_nowcoder(keyword, city, diag=diag)
     if source == "实习僧":
-        return search_shixiseng(keyword, city or "南京", ask_model, diag=diag)
+        return search_shixiseng(keyword, city or "", ask_model, diag=diag)
     if source == "BOSS直聘":
-        return search_boss(keyword, city or "南京", ask_model, diag=diag)
+        return search_boss(keyword, city or "", ask_model, diag=diag)
     raise ValueError(f"未知来源：{source}")
 
 
@@ -494,7 +518,7 @@ def boss_available() -> tuple:
         return False, f"浏览器抓取模块不可用：{str(e)[:120]}"
 
 
-def search_all(keyword: str, city: str = "南京", ask_model=None,
+def search_all(keyword: str, city: str = "", ask_model=None,
                sources: list = None) -> dict:
     """一次搜索，把多个平台的结果合并去重。
 

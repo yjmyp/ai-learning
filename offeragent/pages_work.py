@@ -130,8 +130,8 @@ def page_jobs():
         kw = c1.text_input("关键词（可以写多个，用空格或逗号分开）", value="AI",
                            key="src_kw",
                            placeholder="AI 大模型 算法 / Agent,RAG")
-        city = c2.text_input("城市（也可以写多个）", value="南京", key="src_city",
-                             placeholder="南京 上海 / 远程")
+        city = c2.text_input("城市（也可以写多个）", value="", key="src_city",
+                             placeholder="南京 上海 / 不填默认全国")
         _boss_ok, _boss_why = job_sources.boss_available()
         _src_opts = [job_sources.ALL_SOURCES] + [
             s for s in job_sources.SOURCES if s != "BOSS直聘" or _boss_ok]
