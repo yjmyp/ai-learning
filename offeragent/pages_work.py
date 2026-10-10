@@ -114,6 +114,17 @@ def page_profile():
                 st.markdown(current)
 
 
+def _as_dict(value) -> dict:
+    """把 session_state 里读出来的值当 dict 用之前先验一下类型。
+
+    为什么需要：session_state 是跨多次运行留着的，一旦某次写进去的
+    **不是 dict**（写错类型、或 key 撞上控件导致存进去的是控件值），
+    下一轮渲染就会炸成 `AttributeError: 'list' object has no attribute 'items'` ——
+    而这种错整页都会挂。宁可少显示一块，也不要整页报错。
+    """
+    return value if isinstance(value, dict) else {}
+
+
 # ============================================================
 # 页面：岗位库（v2 · 支持 URL 一键导入）
 # ============================================================
@@ -128,42 +139,42 @@ def page_jobs():
                    "默认只搜**不用登录**的来源（云端也能跑）。")
         c1, c2 = st.columns([2, 3])
         kw = c1.text_input("关键词（可写多个，用空格或逗号分开）", value="AI",
-                           key="src_kw", placeholder="AI 大模型 Agent,RAG")
+                           key="wq_kw", placeholder="AI 大模型 Agent,RAG")
         cities = c2.multiselect("城市（可多选；远程=海外 remote 岗位）", job_sources.COMMON_CITIES,
-                                default=["南京"], accept_new_options=True, key="src_cities",
+                                default=["南京"], accept_new_options=True, key="wq_cities",
                                 help="也能直接输入表里没有的城市（回车确认）。留空 = 全国。")
         c3, c4 = st.columns([3, 2])
         picked_sources = c3.multiselect(
             "来源", job_sources.SOURCES, default=job_sources.NO_LOGIN_SOURCES,
-            key="src_sources",
+            key="wq_sources",
             help="默认三个是国内的公开接口（免登录、云端可用）。"
                  "海外那组（Remotive/RemoteOK/Arbeitnow/WWR/HN/Greenhouse）都是公开 API/RSS，"
                  "本机需要代理、云端直连即可；实习僧要本机浏览器；BOSS 要本机登录。")
-        strict_city = c4.toggle("只要命中城市的岗位", value=True, key="src_strict",
+        strict_city = c4.toggle("只要命中城市的岗位", value=True, key="wq_strict",
                                 help="打开：城市不匹配的直接不显示（推荐）。"
                                      "如果所有来源都没有该城市的岗位，会自动放宽并提示。")
         depth = st.slider("每个来源最多抓多少条（越大越慢）", min_value=40, max_value=500,
-                          value=200, step=20, key="src_depth",
+                          value=200, step=20, key="wq_depth",
                           help="实测网易同一关键词有 1011 条、牛客 302 条、HN 招聘贴 782 条；"
                                "以前每个来源只翻 1-2 页（40-100 条），所以你觉得岗位太少。"
                                "现在按这个数决定翻几页。")
         c5, c6 = st.columns([3, 2])
         use_cache = c5.toggle("用缓存（同关键词 + 城市，10 分钟内秒回）", value=True,
-                              key="src_usecache",
+                              key="wq_usecache",
                               help="抓一次多平台要十几秒，几乎全是等网络。同一条件 10 分钟内再搜"
                                    "就直接复用上次结果（0 秒，也不打站点）；想拿最新岗位就关掉它。")
         cs = job_sources.cache_stats()
         c6.caption(f"缓存：{cs['entries']} 条 · {cs['size_kb']} KB · 有效 {cs['ttl_min']} 分钟")
-        if c6.button("🧹 清空搜索缓存", key="src_clear_cache"):
+        if c6.button("🧹 清空搜索缓存", key="wq_clear_cache"):
             _n = job_sources.cache_clear()
             st.success(f"已清空 {_n} 条搜索缓存（下次搜岗会重新联网抓）")
         with st.expander("➕ 自定义来源（填任意公开 RSS / JSON 列表地址，程序自己抽岗位）"):
             custom_url = st.text_input(
-                "RSS / Atom / JSON 地址", value="", key="src_custom_url",
+                "RSS / Atom / JSON 地址", value="", key="wq_custom_url",
                 placeholder="例如学校就业网 RSS、公司招聘 JSON、社区汇总贴 API")
             st.caption("只读公开内容、不绕登录。填了就在本次搜索里一起抓，来源标为「自定义来源」。")
         city = " ".join(cities)
-        if st.button("🔍 开始搜岗", type="primary", key="do_search"):
+        if st.button("🔍 开始搜岗", type="primary", key="wq_search"):
             if not picked_sources:
                 st.warning("至少选一个来源")
             else:
@@ -175,51 +186,53 @@ def page_jobs():
                             sources=list(picked_sources), strict_city=bool(strict_city),
                             custom_url=custom_url.strip(), max_per_source=int(depth),
                             use_cache=bool(use_cache))
-                        st.session_state["src_elapsed"] = time.perf_counter() - _t0
-                        st.session_state["src_cache_hits"] = int(res.get("cache_hits") or 0)
-                        st.session_state["src_results"] = res["jobs"]
-                        st.session_state["src_stats"] = res["by_source"]
-                        st.session_state["src_errors"] = res["errors"]
-                        st.session_state["src_diag"] = res.get("diag", {})
-                        st.session_state["src_cities"] = res.get("cities", {})
-                        st.session_state["src_relaxed"] = res.get("relaxed", {})
-                        st.session_state["src_city_miss"] = res.get("city_miss", {})
-                        st.session_state["src_relaxed_all"] = res.get("relaxed_all", False)
-                        st.session_state["src_wants"] = res.get("wants", [])
+                        # 结果统一用 sr_ 前缀（widget 一律 wq_ 前缀）——两套命名空间分开，
+                        # 否则"同名 key 既当控件又当结果"会触发 Streamlit 的
+                        # "cannot be modified after the widget is instantiated"。
+                        st.session_state["sr_elapsed"] = time.perf_counter() - _t0
+                        st.session_state["sr_cache_hits"] = int(res.get("cache_hits") or 0)
+                        st.session_state["sr_results"] = res["jobs"]
+                        st.session_state["sr_stats"] = res["by_source"]
+                        st.session_state["sr_errors"] = res["errors"]
+                        st.session_state["sr_diag"] = res.get("diag", {})
+                        st.session_state["sr_city_dist"] = res.get("cities", {})
+                        st.session_state["sr_relaxed"] = res.get("relaxed", {})
+                        st.session_state["sr_city_miss"] = res.get("city_miss", {})
+                        st.session_state["sr_relaxed_all"] = res.get("relaxed_all", False)
+                        st.session_state["sr_wants"] = res.get("wants", [])
                     except Exception as e:
-                        st.session_state["src_results"] = []
+                        st.session_state["sr_results"] = []
                         st.error(str(e))
-        stats = st.session_state.get("src_stats") or {}
-        errors = st.session_state.get("src_errors") or {}
-        wants = st.session_state.get("src_wants") or []
+        stats = _as_dict(st.session_state.get("sr_stats"))
+        errors = _as_dict(st.session_state.get("sr_errors"))
+        wants = st.session_state.get("sr_wants") or []
         if stats:
             st.markdown("**各来源命中：**" + "　".join(
                 f"{k} **{v}** 条" for k, v in stats.items()))
-            _el = st.session_state.get("src_elapsed")
+            _el = st.session_state.get("sr_elapsed")
             if _el is not None:
-                _ch = int(st.session_state.get("src_cache_hits") or 0)
+                _ch = int(st.session_state.get("sr_cache_hits") or 0)
                 st.caption(
                     f"⏱️ 本次耗时 {_el:.1f} 秒"
                     + (f"（其中 {_ch} 个来源命中缓存、没有联网）" if _ch else "")
                     + "　·　同一关键词+城市在 10 分钟内再搜会直接复用缓存")
             if wants:
                 st.caption("城市条件：" + "、".join(wants)
-                           + ("（严格：不匹配的不显示）" if st.session_state.get("src_relaxed") is not None
-                              and st.session_state.get("src_strict") else ""))
-            if st.session_state.get("src_relaxed_all"):
+                           + ("（严格：不匹配的不显示）" if strict_city else ""))
+            if st.session_state.get("sr_relaxed_all"):
                 st.warning("⚠️ 这次**所有来源都没有**你选的城市岗位，已自动放宽为「全国结果」——"
                            "下面的岗位都不是你选的城市，注意看城市列。")
-            miss = st.session_state.get("src_city_miss") or {}
+            miss = _as_dict(st.session_state.get("sr_city_miss"))
             if miss:
                 detail = "；".join(f"{k} {v} 条全被过滤" for k, v in miss.items())
                 st.info("这些来源这次没有你选的城市岗位：" + detail
                         + "　（它们的岗位城市见下面「抓取诊断」）")
-            cdist = st.session_state.get("src_cities") or {}
+            cdist = _as_dict(st.session_state.get("sr_city_dist"))
             if cdist:
                 with st.expander("📍 各来源这次捞回来的城市分布（解释为什么结果少）"):
                     for s, rows in cdist.items():
                         st.markdown(f"- **{s}**：" + "、".join(f"{c} {n}" for c, n in rows))
-        _diag = st.session_state.get("src_diag") or {}
+        _diag = _as_dict(st.session_state.get("sr_diag"))
         if _diag:
             with st.expander("🔬 抓取诊断（岗位为什么只有这些？）"):
                 st.caption("这里是每个平台「页面里有多少条 → 抽出来多少条」。"
@@ -264,7 +277,7 @@ def page_jobs():
                     "5. 单个岗位想看得更细，用「🔗 URL 导入」把链接粘进来单独抓。")
         for k, v in errors.items():
             st.warning(f"{k} 没成功：{v}")
-        results = st.session_state.get("src_results", [])
+        results = st.session_state.get("sr_results", [])
         if results:
             st.success(f"合并后共 {len(results)} 条（已去重）。勾选要入库的，然后点下面的按钮。")
             picked = []
@@ -324,9 +337,9 @@ def page_jobs():
                            "去「匹配分析」跑一下就能看到匹配度。")
                 if added:
                     next_step("saved_job")
-        elif results == [] and st.session_state.get("do_search_done"):
+        elif results == [] and st.session_state.get("sr_search_done"):
             st.warning("没搜到结果。换个关键词或来源试试；BOSS 记得先登录。")
-        st.session_state["do_search_done"] = bool(results) or st.session_state.get("do_search_done")
+        st.session_state["sr_search_done"] = bool(results) or st.session_state.get("sr_search_done")
 
     # ---- URL 导入 ----
     with tab1:
