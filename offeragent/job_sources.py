@@ -22,6 +22,10 @@ import json
 import os
 import re
 import time
+import hashlib
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -270,47 +274,40 @@ NOWCODER_HEADERS = {
 
 
 def _nowcoder_api_requests(q: str, pages: int):
-    """直连接口翻页。缺了 Referer / Origin 会被判成爬虫（返回"服务器错误"）。
+    """直连接口翻页（3 路并发 + 每站 0.25s 节流）。缺 Referer/Origin 会被判成爬虫。
 
     两个细节都是踩出来的：
       · **单页失败不要整体放弃**：实测 302 条 / 16 页，中间某一页会偶发
         ConnectionError；以前直接 break，结果只拿到 80 条（"岗位太少"的元凶之一）。
         现在每页重试 1 次，仍失败就跳过这页继续翻后面的。
-      · 返回条数少于 pageSize 说明到底了，提前结束。
+      · 返回条数少于 pageSize 说明到底了，提前结束（并发时由 stop_when 判定）。
     """
-    body_tpl = ("requestFrom=1&page={p}&pageSize=20&recruitType=2"
-                "&pageSource=5001" + q)
     per_page = 20
+
+    def fetch(p):
+        return _nowcoder_fetch_page(p, q, per_page)
+
+    def stop_when(r):
+        status, datas, _dd = r or ("skip", None, {})
+        if status == "stop":
+            return True
+        return status == "ok" and len(datas or []) < per_page
+
+    rows = parallel_pages(fetch, pages, key="nowcoder", stop_when=stop_when)
     items, total, done, err, skipped = [], 0, 0, "", []
-    for p in range(1, pages + 1):
-        url = (f"https://www.nowcoder.com{NOWCODER_API}"
-               f"?_={int(time.time() * 1000)}")
-        d = None
-        for attempt in range(2):          # 每页最多试 2 次
-            try:
-                r = requests.post(url, data=body_tpl.format(p=p),
-                                  headers=NOWCODER_HEADERS, timeout=20)
-                d = r.json()
-                break
-            except Exception as e:
-                err = str(e)[:120]
-                time.sleep(0.6)
-        if d is None:
-            skipped.append(p)             # 这页废了，但不影响后面的页
+    for p, r in rows:
+        status, datas, extra = r or ("skip", None, {})
+        if status != "ok":
+            if status == "skip":
+                skipped.append(p)         # 这页废了，但不影响别的页
+            if not err:
+                err = str(extra or "")
             continue
-        dd = d.get("data") if isinstance(d.get("data"), dict) else {}
-        datas = dd.get("datas") or []
-        if d.get("code") != 0 or not datas:
-            err = str(d.get("msg") or "")[:60]
-            break
-        total = dd.get("totalCount") or total
+        if not datas:
+            continue
+        total = (extra or {}).get("totalCount") or total
         items += datas
         done = p
-        if dd.get("totalPage") and p >= dd["totalPage"]:
-            break
-        if len(datas) < per_page:
-            break
-        time.sleep(0.2)
     if items:
         diag = {"api_total": total, "api_pages": done, "api_via": "requests"}
         if err:
@@ -319,6 +316,64 @@ def _nowcoder_api_requests(q: str, pages: int):
             diag["api_skipped_pages"] = skipped
         return items, diag
     return [], {"api_error": err or "直连接口没返回数据"}
+
+
+def _nowcoder_fetch_page(p: int, q: str, per_page: int = 20):
+    """抓牛客第 p 页，返回 (状态, 数据, 附加信息)：
+
+      ok   → 数据 = 这一页的列表（空列表 = 到底了）
+      skip → 网络失败（重试 1 次仍失败）：只废这一页，别的页继续
+      stop → 接口明确报错（code != 0）：停止翻页
+    """
+    url = f"https://www.nowcoder.com{NOWCODER_API}?_={int(time.time() * 1000)}"
+    body = (f"requestFrom=1&page={p}&pageSize={per_page}&recruitType=2"
+            f"&pageSource=5001" + q)
+    err = ""
+    for _attempt in range(2):             # 每页最多试 2 次
+        try:
+            # 超时 12 秒：实测正常页 0.5~0.8 秒就回来，而站点偶发"整页不响应"——
+            # 那种卡顿会一直挂到超时为止（曾观测到 20.87s = 正好撞上原来的 20s 超时，
+            # 两次尝试都挂就是 40.13s）。12 秒足够宽松，又能把最坏情况从 41 秒压到 25 秒。
+            r = requests.post(url, data=body, headers=NOWCODER_HEADERS, timeout=12)
+            d = r.json()
+        except Exception as e:
+            err = str(e)[:120]
+            time.sleep(0.6)
+            continue
+        if d.get("code") != 0:
+            return "stop", None, str(d.get("msg") or "")[:60]
+        dd = d.get("data") if isinstance(d.get("data"), dict) else {}
+        return "ok", (dd.get("datas") or []), dd
+    return "skip", None, err
+
+
+def _nowcoder_company(rec: dict) -> str:
+    """从牛客记录里挖出**公司名**。
+
+    踩坑：牛客搜索接口的记录里**没有**顶层 companyName（那是首页版的 schema），
+    公司名藏在 `recommendInternCompany.companyName`（简称）或
+    `user.identity[].companyName`（全称）里。之前直接取 companyName 拿不到，
+    就退化成 `company#304612`——后果不只是显示难看：合并去重是按「岗位名+公司」
+    做的，公司名全空 → 同名岗位被当重复丢掉。实测搜「AI」280 条里 192 条都叫
+    「Ai应用开发」，最后被去重成 75 条，这就是"岗位太少"的一个真原因。
+    """
+    comp = rec.get("companyName")
+    if not comp:
+        ric = rec.get("recommendInternCompany")
+        if isinstance(ric, dict):
+            comp = ric.get("companyShortName") or ric.get("companyName")
+    if not comp:
+        u = rec.get("user")
+        idents = (u.get("identity") or []) if isinstance(u, dict) else []
+        for ident in idents:
+            if isinstance(ident, dict) and ident.get("companyName"):
+                comp = ident["companyName"]
+                break
+    comp = str(comp or "").strip()
+    if comp:
+        return comp
+    cid = rec.get("companyId")
+    return f"牛客公司#{cid}" if cid else ""
 
 
 def _nowcoder_map(raw_jobs: list, keyword: str, city: str, diag=None,
@@ -354,8 +409,9 @@ def _nowcoder_map(raw_jobs: list, keyword: str, city: str, diag=None,
             extra_bits.append(str(rec["graduationYear"]))
         if rec.get("durationMonths"):
             extra_bits.append(f"实习 {rec['durationMonths']} 个月")
-        if rec.get("companyName"):
-            extra_bits.append(str(rec["companyName"]))
+        company = _nowcoder_company(rec)
+        if company:
+            extra_bits.append(company)
         # 牛客的结构化数据里带要求原文，直接拿来当 JD（不用再抓详情页）
         jd_parts = []
         if rec.get("description"):
@@ -376,7 +432,7 @@ def _nowcoder_map(raw_jobs: list, keyword: str, city: str, diag=None,
         jid = rec.get("jobId") or rec.get("id")
         jobs.append({
             "title": title,
-            "company": rec.get("companyName") or f"company#{rec.get('companyId', '')}",
+            "company": company,
             "city": jcity,
             "salary": salary,
             "url": (f"https://www.nowcoder.com/job/center/{jid}" if jid else ""),
@@ -646,6 +702,96 @@ def sleep_between_pages(seconds: float = 0.25):
     time.sleep(seconds)
 
 
+SEARCH_WORKERS = 3          # 单个站点的并发路数上限（不是越多越好，3 路足够且礼貌）
+PAGE_MIN_INTERVAL = 0.25    # 同一站点两次请求的最小间隔（秒）
+
+_PAGE_LOCK = threading.Lock()
+_LAST_HIT = {}              # {站点名: 上次发请求的时间戳}
+
+
+def _throttle(key: str, min_interval: float = PAGE_MIN_INTERVAL):
+    """全局节流：同一个站点两次请求的发出时间至少隔 min_interval 秒。
+
+    拿不到"发车名额"就睡一小下再抢，所以 3 个线程并发时也不会在同一瞬间
+    把 3 个请求同时甩给同一个站。锁只保护"抢名额"这一步、不覆盖请求本身，
+    否则并发就退化成串行了。
+    """
+    if min_interval <= 0:
+        return
+    while True:
+        with _PAGE_LOCK:
+            wait = _LAST_HIT.get(key, 0.0) + min_interval - time.time()
+            if wait <= 0:
+                _LAST_HIT[key] = time.time()
+                return
+        time.sleep(min(wait, 0.2))
+
+
+def parallel_pages(fetch_one, pages: int, workers: int = SEARCH_WORKERS,
+                   key: str = "", min_interval: float = PAGE_MIN_INTERVAL,
+                   stop_when=None):
+    """并发翻页（带礼貌节流），返回 [(页号, 该页结果), ...]：按页号升序、已截断。
+
+    fetch_one(page) -> 该页结果；**抛异常记成 None**（= 这页废了，跳过、继续翻后面的）
+    stop_when(结果) -> True 表示"到底了 / 站点明确报错"，停止翻后面的页
+
+    实现是**滚动窗口**：始终保持 workers 个请求在飞，谁先回来谁先补位（不用等整批）。
+    为什么不用"按波次翻"（一波全回来再开下一波）：实测单页会出现偶发 ~20 秒卡顿，
+    波次模式下这一卡会拖住整整一波；滚动窗口下它只占住 1 个槽位，别的页照常往下翻。
+    另外"到底了"会立刻停止再提交新页，所以最多白翻 worker-1 页。
+    只翻 1 页或 workers<=1 时自动退化成顺序抓取（方便对照 / 给慢站点留后路）。
+
+    为什么值得做：实测抓 8 页牛客 = 26.6 秒，本地解析 160 条只花 0.0011 秒
+    （占 0.004%）——时间全花在等网络上，串行等就是白等。
+    """
+    pages = max(1, int(pages or 1))
+    if pages == 1 or workers <= 1:
+        out = []
+        for p in range(1, pages + 1):
+            _throttle(key, min_interval)
+            try:
+                obj = fetch_one(p)
+            except Exception:
+                obj = None
+            out.append((p, obj))
+            if stop_when and stop_when(obj):
+                break
+        return out
+
+    def _run(pg):
+        _throttle(key, min_interval)
+        try:
+            return fetch_one(pg)
+        except Exception:
+            return None
+
+    got, stop_page, next_page, pending = {}, None, 1, {}
+    ex = ThreadPoolExecutor(max_workers=max(1, int(workers)))
+    try:
+        while True:
+            while stop_page is None and len(pending) < workers and next_page <= pages:
+                pending[ex.submit(_run, next_page)] = next_page   # 补满窗口
+                next_page += 1
+            if not pending:
+                break
+            finished = wait(list(pending), return_when=FIRST_COMPLETED).done
+            for f in finished:                # 谁先回来先收谁，按页号记结果
+                pg = pending.pop(f)
+                got[pg] = f.result()
+                if stop_page is None and stop_when and stop_when(got[pg]):
+                    stop_page = pg            # 到底了：不再提交新页，等手上这几页收完
+    finally:
+        try:
+            ex.shutdown(wait=False, cancel_futures=True)
+        except TypeError:                   # 老 Python 没有 cancel_futures
+            ex.shutdown(wait=False)
+
+    out = sorted(got.items())
+    if stop_page is not None:
+        out = [(p, o) for p, o in out if p <= stop_page]
+    return out
+
+
 def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
                    pages: int = None, max_items: int = 200) -> list:
     """腾讯招聘公开接口（免登录）。城市在客户端过滤——接口没有可用的城市参数。
@@ -657,19 +803,26 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
     kw = kws[0] if kws else ""
     per_page = 50
     pages = pages or pages_for(max_items, per_page, cap=10)
-    jobs, raw_n = [], 0
-    for p in range(1, max(1, pages) + 1):
+
+    def fetch(p):
         try:
             d = requests.get(TENCENT_API, headers=H, timeout=25, params={
-                "keyword": kw, "pageIndex": p, "pageSize": per_page, "language": "zh-cn"}).json()
-            posts = ((d.get("Data") or {}).get("Posts") or [])
+                "keyword": kw, "pageIndex": p, "pageSize": per_page,
+                "language": "zh-cn"}).json()
+            return "ok", ((d.get("Data") or {}).get("Posts") or [])
         except Exception as e:
-            if diag is not None:
-                diag["api_error"] = f"第{p}页：{type(e).__name__}"
-            break
-        if not posts:
-            break
-        sleep_between_pages()
+            return "skip", f"第{p}页：{type(e).__name__}"
+
+    def stop_when(r):
+        status, posts = r or ("skip", None)
+        return status == "ok" and len(posts or []) < per_page
+
+    jobs, raw_n, err = [], 0, ""
+    for p, r in parallel_pages(fetch, max(1, pages), key="tencent", stop_when=stop_when):
+        status, posts = r or ("skip", None)
+        if status != "ok":
+            err = err or str(posts or "")
+            continue
         for j in posts:
             raw_n += 1
             title, c = j.get("RecruitPostName") or "", j.get("LocationName") or ""
@@ -684,11 +837,13 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
                 jd=(duty + "\n\n任职要求：\n" + req).strip(),
                 hits=_kw_hits(f"{title} {duty} {req}", kws),
                 ch=city_hit(c, wants)))
-        if len(posts) < per_page or len(jobs) >= max_items:
+        if len(jobs) >= max_items:
             break
     jobs.sort(key=lambda x: (-x["match_hits"], not x["city_hit"]))
     if diag is not None:
         diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants, "source_api": "公开接口"})
+        if err:
+            diag["api_error"] = err
     return jobs
 
 
@@ -703,24 +858,29 @@ def search_netease(keyword: str = "", city: str = "", diag: dict = None,
     kw = kws[0] if kws else ""
     per_page = 50
     pages = pages or pages_for(max_items, per_page, cap=20)
-    jobs, raw_n = [], 0
-    total = None
-    for p in range(1, max(1, pages) + 1):
+
+    def fetch(p):
         try:
             d = requests.post(NETEASE_API, headers={**H, "Content-Type": "application/json"},
                               timeout=25, json={"currentPage": p, "pageSize": per_page,
                                                 "keyword": kw}).json()
             dd = d.get("data") or {}
-            lst = (dd.get("list") or [])
-            if total is None:
-                total = dd.get("total") or dd.get("totalCount")
+            return "ok", (dd.get("list") or []), (dd.get("total") or dd.get("totalCount"))
         except Exception as e:
-            if diag is not None:
-                diag["api_error"] = f"第{p}页：{type(e).__name__}"
-            break
-        if not lst:
-            break
-        sleep_between_pages()
+            return "skip", None, f"第{p}页：{type(e).__name__}"
+
+    def stop_when(r):
+        status, lst, _total = r or ("skip", None, None)
+        return status == "ok" and len(lst or []) < per_page
+
+    jobs, raw_n, total, err = [], 0, None, ""
+    for p, r in parallel_pages(fetch, max(1, pages), key="netease", stop_when=stop_when):
+        status, lst, extra = r or ("skip", None, None)
+        if status != "ok":
+            err = err or str(extra or "")
+            continue
+        if total is None:
+            total = extra
         for j in lst:
             raw_n += 1
             title = j.get("name") or ""
@@ -736,14 +896,14 @@ def search_netease(keyword: str = "", city: str = "", diag: dict = None,
                 jd=(desc + "\n\n任职要求：\n" + req).strip(),
                 hits=_kw_hits(f"{title} {desc} {req}", kws),
                 ch=city_hit(c, wants)))
-        if len(lst) < per_page or len(jobs) >= max_items:
-            break
-        if total and raw_n >= int(total):
+        if len(jobs) >= max_items:
             break
     jobs.sort(key=lambda x: (-x["match_hits"], not x["city_hit"]))
     if diag is not None:
         diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants, "source_api": "公开接口",
                      "site_total": total})
+        if err:
+            diag["api_error"] = err
     return jobs
 
 
@@ -919,15 +1079,18 @@ def search_hn_hiring(keyword: str = "", city: str = "", diag: dict = None,
             raise RuntimeError("没找到 Who is hiring 贴")
         story_id = hits[0]["objectID"]
         # 实测：这条招聘贴 nbHits=782、nbPages=8；以前只取 1 页 200 条 → 现在翻 3 页
-        comments = []
-        for page in range(0, 3):
+        # （页是独立的查询，2 路并发即可，仍按页号拼回去）
+        def fetch_hn_page(pg):
             c = fetch_json_or_text(HN_ALGOLIA + "/search", params={
-                "tags": "comment,story_%s" % story_id, "hitsPerPage": 100, "page": page}).json()
-            got = c.get("hits") or []
-            comments += got
-            if len(got) < 100:
-                break
-            sleep_between_pages()
+                "tags": "comment,story_%s" % story_id, "hitsPerPage": 100, "page": pg}).json()
+            return c.get("hits") or []
+
+        comments = []
+        for _pg, got in parallel_pages(fetch_hn_page, 3, workers=2, key="hn",
+                                       stop_when=lambda g: len(g or []) < 100):
+            comments += got or []
+        if not comments:
+            raise RuntimeError("HN 招聘贴这几页一条都没拿到（可能是网络/代理问题）")
     except Exception as e:
         if diag is not None:
             diag["api_error"] = str(e)[:80]
@@ -969,15 +1132,24 @@ def search_greenhouse(keyword: str = "", city: str = "", diag: dict = None,
     """
     kws, wants = split_terms(keyword), want_cities(city)
     jobs, raw_n, failed = [], 0, []
-    for slug, name in ATS_COMPANIES.items():
-        if len(jobs) >= limit:      # 已经够了就不再翻下一家公司
-            break
+    comps = list(ATS_COMPANIES.items())      # 7 家公司都挂在同一个 hosts 上，3 路并发 + 节流
+
+    def fetch(p):
+        slug, name = comps[p - 1]
         try:
             d = fetch_json_or_text(GREENHOUSE_API % slug).json()
-            lst = d.get("jobs") or []
+            return "ok", name, (d.get("jobs") or [])
         except Exception as e:
-            failed.append(f"{name}:{type(e).__name__}")
+            return "fail", name, type(e).__name__
+
+    for _p, r in parallel_pages(fetch, len(comps), key="greenhouse"):
+        if len(jobs) >= limit:       # 已经够了就不再往结果里加（并发抓回来的照样丢掉）
+            break
+        status, name, payload = r or ("fail", "", "unknown")
+        if status != "ok":
+            failed.append(f"{name}:{payload}")
             continue
+        lst = payload
         for j in lst:
             raw_n += 1
             title = j.get("title") or ""
@@ -1131,9 +1303,132 @@ def search(source: str, keyword: str, city: str = "", ask_model=None,
 
 
 # ============================================================
+# 4.5) 搜索结果缓存（同一「来源 + 关键词 + 城市 + 每源上限」10 分钟内直接复用）
+# ============================================================
+# 为什么要缓存：抓一次多平台要十几到二十几秒，几乎全是网络等待。用户在界面上
+# 反复点「搜岗」（想换个关键词试试、或者手滑点了两次）时，完全没必要把同一批
+# 请求再打一遍——对站点也是负担。所以按这个四元组存**原始来源结果**，默认 10 分钟。
+#
+# 只缓存「来源返回的原始结果」：城市过滤、合并去重仍然在缓存之后做，
+# 所以同一份缓存配上 strict_city 开关的不同取值也都是对的。
+CACHE_TTL = 600                # 秒。10 分钟内重复搜同一条件 = 秒回
+CACHE_MAX_ENTRIES = 60         # 最多留多少条，超了删最旧的（防缓存文件无限长大）
+CACHE_ENABLED = True           # 测试里会关掉，避免假数据落进真缓存
+CACHE_PATH = Path(__file__).resolve().parent / "data" / "search_cache.json"
+_CACHE_LOCK = threading.Lock()
+
+
+def cache_path() -> Path:
+    """缓存文件位置。环境变量 JOBS_CACHE 可覆盖（测试/多实例用）。"""
+    env = os.environ.get("JOBS_CACHE", "").strip()
+    return Path(env) if env else CACHE_PATH
+
+
+def _cache_read_raw() -> dict:
+    try:
+        data = json.loads(cache_path().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:          # 文件不存在 / 坏了都当"空缓存"，绝不让缓存把搜岗搞挂
+        return {}
+
+
+def _cache_write_raw(data: dict):
+    p = cache_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, p)     # 原子替换：避免读到写了一半的文件
+    except Exception:
+        pass
+
+
+def cache_key(source: str, keyword: str, city: str, max_items: int) -> str:
+    raw = (f"{(source or '').strip()}|{(keyword or '').strip().lower()}|"
+           f"{(city or '').strip()}|{int(max_items or 0)}")
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def cache_get(source, keyword, city, max_items, ttl: int = CACHE_TTL):
+    """命中返回 (岗位列表, 缓存了多久)；没命中/过期返回 (None, 0)。"""
+    if not CACHE_ENABLED:
+        return None, 0
+    k = cache_key(source, keyword, city, max_items)
+    with _CACHE_LOCK:
+        ent = _cache_read_raw().get(k)
+    if not isinstance(ent, dict) or not isinstance(ent.get("jobs"), list):
+        return None, 0
+    age = time.time() - float(ent.get("t") or 0)
+    if age > ttl:
+        return None, 0
+    return ent["jobs"], age
+
+
+def cache_put(source, keyword, city, max_items, jobs: list):
+    if not CACHE_ENABLED or not jobs:
+        return
+    k = cache_key(source, keyword, city, max_items)
+    with _CACHE_LOCK:
+        store = _cache_read_raw()
+        store[k] = {"t": time.time(), "n": len(jobs), "src": source, "kw": keyword,
+                    "city": city, "max": int(max_items or 0), "jobs": jobs}
+        if len(store) > CACHE_MAX_ENTRIES:
+            newest = sorted(store.items(), key=lambda kv: -((kv[1] or {}).get("t") or 0))
+            store = dict(newest[:CACHE_MAX_ENTRIES])
+        _cache_write_raw(store)
+
+
+def cache_stats() -> dict:
+    """给界面看：缓存里有几条、多大、最新一条多久前、TTL 多久。"""
+    store = _cache_read_raw()
+    p = cache_path()
+    try:
+        size = p.stat().st_size if p.exists() else 0
+    except Exception:
+        size = 0
+    newest = max(((e or {}).get("t") or 0 for e in store.values()), default=0)
+    return {"entries": len(store), "size_kb": round(size / 1024, 1),
+            "ttl_min": CACHE_TTL // 60, "enabled": bool(CACHE_ENABLED),
+            "newest_age_s": int(time.time() - newest) if newest else None}
+
+
+def cache_clear() -> int:
+    """清空缓存，返回清掉的条数。"""
+    with _CACHE_LOCK:
+        n = len(_cache_read_raw())
+        _cache_write_raw({})
+    return n
+
+
+# ============================================================
 # 5) 多平台合并搜岗
 # ============================================================
 ALL_SOURCES = "全部平台（合并去重）"
+
+
+def dedup_key(job: dict) -> str:
+    """合并去重用的键：**岗位名 + 公司 + 城市**（公司名不可用时退回 URL）。
+
+    为什么不只用「岗位名 + 公司」——实测数据（牛客搜「AI」，深抓到 280 条）：
+      · 按「岗位名 + 公司」去重 → 只剩 79 条
+      · 按「岗位名 + 公司 + 城市」去重 → 276 条
+      · 按 URL 去重 → 276 条（和上一行吻合，说明差掉的 197 条不是重复）
+    原因是同一家公司会在**很多城市**发同名岗位（实测「AI应用开发（可转正）@墨泊可士」
+    10 条覆盖 10 个城市，URL 各不相同）。按「名+公司」合并会把它们全砍成 1 条，
+    这就是"岗位太少"的一个真原因。
+
+    加城市这一维之后：同城 + 同名 + 同公司仍然合并（"同一岗位被两个平台都列出来"
+    照样去重），不同城市的真实岗位各留一条。公司名拿不到时退回 URL 兜底。
+    """
+    def _n(s):
+        return re.sub(r"\s+", "", (s or "").lower())
+
+    title, comp, city = _n(job.get("title")), _n(job.get("company")), _n(job.get("city"))
+    usable = comp and not comp.startswith("company#") and not comp.startswith("牛客公司#")
+    if usable:
+        return f"{title}|{comp}|{city}"
+    url = (job.get("url") or "").strip()
+    return f"{title}|{city}|{url}" if url else f"{title}|{comp}|{city}"
 
 
 def boss_available() -> tuple:
@@ -1147,8 +1442,13 @@ def boss_available() -> tuple:
 
 def search_all(keyword: str, city: str = "", ask_model=None,
                sources: list = None, strict_city: bool = True,
-               custom_url: str = "", max_per_source: int = 200) -> dict:
+               custom_url: str = "", max_per_source: int = 200,
+               use_cache: bool = True) -> dict:
     """一次搜索，把多个平台的结果合并去重。
+
+    use_cache=True 时：同一「来源+关键词+城市+每源上限」10 分钟内直接复用上次结果
+    （抓一次十几秒，全是网络等待；重复搜同一条件是纯浪费）。每个来源的命不命中
+    都写进 diag[来源]["cache"]，界面上能看到。
 
     返回 {
       "jobs": [...],                 # 合并去重后的岗位，牛客优先、其余按平台顺序
@@ -1197,10 +1497,22 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     for src, _custom_url in tasks:
         d = {}
         try:
-            rows = (search_custom_feed(_custom_url, keyword, city, diag=d, limit=max_per_source)
-                    if _custom_url
-                    else search(src, keyword, city, ask_model, diag=d,
-                                max_items=max_per_source))
+            rows = None
+            if use_cache and not _custom_url:      # 自定义来源不缓存（地址就是变量）
+                hit, age = cache_get(src, keyword, city, max_per_source)
+                if hit is not None:
+                    rows = hit
+                    d["cache"] = "命中缓存（%.0f 秒前抓的同一条件，未联网）" % age
+            if rows is None:
+                if _custom_url:
+                    rows = search_custom_feed(_custom_url, keyword, city,
+                                              diag=d, limit=max_per_source)
+                else:
+                    rows = search(src, keyword, city, ask_model, diag=d,
+                                  max_items=max_per_source)
+                    if use_cache:
+                        cache_put(src, keyword, city, max_per_source, rows)
+                        d["cache"] = "未命中缓存，这次联网抓取（%d 条已写入缓存）" % len(rows)
             raw_by_src[src] = list(rows)
             # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
             counter = {}
@@ -1223,10 +1535,8 @@ def search_all(keyword: str, city: str = "", ask_model=None,
             diag[src] = d
             continue
         for j in rows:
-            # 去重键：岗位名 + 公司（都去空格和小写），防止同一岗位跨平台重复
-            key = re.sub(r"\s+", "",
-                         f"{(j.get('title') or '').lower()}|"
-                         f"{(j.get('company') or '').lower()}")
+            # 去重键见 dedup_key()：岗位名 + 公司，公司名拿不到时退回 URL
+            key = dedup_key(j)
             if key in seen:
                 continue
             seen.add(key)
@@ -1241,8 +1551,7 @@ def search_all(keyword: str, city: str = "", ask_model=None,
     if strict_city and wants and not merged:
         for src, _u in tasks:
             for j in raw_by_src.get(src, []):
-                key = re.sub(r"\s+", "", f"{(j.get('title') or '').lower()}|"
-                                          f"{(j.get('company') or '').lower()}")
+                key = dedup_key(j)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -1250,7 +1559,11 @@ def search_all(keyword: str, city: str = "", ask_model=None,
         relaxed_all = True
     diag["keywords"] = split_terms(keyword)
     diag["cities"] = wants
+    cache_hits = sum(1 for _s, _d in diag.items()
+                     if isinstance(_d, dict)
+                     and str(_d.get("cache", "")).startswith("命中缓存"))
     return {"jobs": merged, "by_source": by_source, "errors": errors,
             "diag": diag, "cities": city_stats, "relaxed": relaxed,
             "city_miss": city_miss, "relaxed_all": relaxed_all,
-            "wants": wants, "strict_city": strict_city}
+            "wants": wants, "strict_city": strict_city,
+            "cache_hits": cache_hits, "cache_enabled": bool(use_cache)}

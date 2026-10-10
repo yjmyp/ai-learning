@@ -147,6 +147,16 @@ def page_jobs():
                           help="实测网易同一关键词有 1011 条、牛客 302 条、HN 招聘贴 782 条；"
                                "以前每个来源只翻 1-2 页（40-100 条），所以你觉得岗位太少。"
                                "现在按这个数决定翻几页。")
+        c5, c6 = st.columns([3, 2])
+        use_cache = c5.toggle("用缓存（同关键词 + 城市，10 分钟内秒回）", value=True,
+                              key="src_usecache",
+                              help="抓一次多平台要十几秒，几乎全是等网络。同一条件 10 分钟内再搜"
+                                   "就直接复用上次结果（0 秒，也不打站点）；想拿最新岗位就关掉它。")
+        cs = job_sources.cache_stats()
+        c6.caption(f"缓存：{cs['entries']} 条 · {cs['size_kb']} KB · 有效 {cs['ttl_min']} 分钟")
+        if c6.button("🧹 清空搜索缓存", key="src_clear_cache"):
+            _n = job_sources.cache_clear()
+            st.success(f"已清空 {_n} 条搜索缓存（下次搜岗会重新联网抓）")
         with st.expander("➕ 自定义来源（填任意公开 RSS / JSON 列表地址，程序自己抽岗位）"):
             custom_url = st.text_input(
                 "RSS / Atom / JSON 地址", value="", key="src_custom_url",
@@ -159,10 +169,14 @@ def page_jobs():
             else:
                 with st.spinner(f"正在搜「{kw}」…（多平台十几秒）"):
                     try:
+                        _t0 = time.perf_counter()
                         res = job_sources.search_all(
                             kw.strip(), city.strip(), ask_model=lambda p: ask_chat(p),
                             sources=list(picked_sources), strict_city=bool(strict_city),
-                            custom_url=custom_url.strip(), max_per_source=int(depth))
+                            custom_url=custom_url.strip(), max_per_source=int(depth),
+                            use_cache=bool(use_cache))
+                        st.session_state["src_elapsed"] = time.perf_counter() - _t0
+                        st.session_state["src_cache_hits"] = int(res.get("cache_hits") or 0)
                         st.session_state["src_results"] = res["jobs"]
                         st.session_state["src_stats"] = res["by_source"]
                         st.session_state["src_errors"] = res["errors"]
@@ -181,6 +195,13 @@ def page_jobs():
         if stats:
             st.markdown("**各来源命中：**" + "　".join(
                 f"{k} **{v}** 条" for k, v in stats.items()))
+            _el = st.session_state.get("src_elapsed")
+            if _el is not None:
+                _ch = int(st.session_state.get("src_cache_hits") or 0)
+                st.caption(
+                    f"⏱️ 本次耗时 {_el:.1f} 秒"
+                    + (f"（其中 {_ch} 个来源命中缓存、没有联网）" if _ch else "")
+                    + "　·　同一关键词+城市在 10 分钟内再搜会直接复用缓存")
             if wants:
                 st.caption("城市条件：" + "、".join(wants)
                            + ("（严格：不匹配的不显示）" if st.session_state.get("src_relaxed") is not None
@@ -207,6 +228,8 @@ def page_jobs():
                     if not isinstance(_d, dict):
                         continue
                     bits = []
+                    if _d.get("cache"):
+                        bits.append(str(_d["cache"]))
                     if _d.get("api_total"):
                         bits.append(f"站点接口共 {_d['api_total']} 条，"
                                     f"抓了 {_d.get('api_pages')} 页")

@@ -18,6 +18,8 @@ except Exception:
 
 import job_sources as js  # noqa: E402
 
+js.CACHE_ENABLED = False   # 下面是假数据，绝不能写进真缓存文件（否则真搜岗会捞到假岗位）
+
 
 def fake_search(src, keyword, city="", ask_model=None, diag=None, **kwargs):
     """假的来源：甲平台有南京岗，乙平台全是深圳岗。
@@ -78,6 +80,17 @@ def main():
     checks.append(("默认来源都是免登录的（%s）" % js.NO_LOGIN_SOURCES,
                    all(s in js.SOURCES for s in js.NO_LOGIN_SOURCES)
                    and "BOSS直聘" not in js.NO_LOGIN_SOURCES))
+
+    # 7) 去重口径（实测证据：同公司同名岗位分布在 10 个城市，按"名+公司"去重会把 280 条砍成 79 条）
+    a = {"title": "AI应用开发", "company": "墨泊可士", "city": "南京", "url": "u1"}
+    b = {"title": "AI应用开发", "company": "墨泊可士", "city": "杭州", "url": "u2"}
+    c2 = {"title": "AI应用开发", "company": "墨泊可士", "city": "南京", "url": "u3"}
+    checks.append(("去重：同城同公司同岗位合并、不同城市各留一条",
+                   js.dedup_key(a) == js.dedup_key(c2) and js.dedup_key(a) != js.dedup_key(b)))
+    n1 = {"title": "AI应用开发", "company": "", "city": "南京", "url": "x1"}
+    n2 = {"title": "AI应用开发", "company": "", "city": "南京", "url": "x2"}
+    checks.append(("去重：公司名缺失时按 URL 兜底、不误合并同名岗位",
+                   js.dedup_key(n1) != js.dedup_key(n2)))
 
     ok_n = sum(1 for _, v in checks if v)
     for name, good in checks:
