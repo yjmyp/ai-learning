@@ -8,7 +8,7 @@
 |---|---|---|
 | [OfferAgent 求职工作台](offeragent/) | Agent 工具调用与工作流引擎：画像蒸馏 → 岗位匹配 → 话术生成 → 投递 → 复盘 全链路 | 打分从不可复现改为可复算（标准差 10 → 0.00）；30/30 工具守卫；Java/SpringBoot 3 + MySQL + Redis 对外 API 层 |
 | [RAG 检索问答服务](rag2/) | 私有资料检索问答：多格式解析 → 结构切分 → 混合召回 → 多特征重排 → 句级引用 | R@5 95% / MRR 0.856（240 条自建评估集）；可信拒答误拒率 2%；稳态 20 QPS |
-| [Java API 层](java-api/) | OfferAgent 对外服务：SpringBoot 3 + JDK 21 + MySQL(JPA) + Redis + Docker | 缓存 464ms→51ms；API Key 鉴权 + 限流；Prometheus 指标；19 测试 0 失败 |
+| [Java API 层](java-api/) | OfferAgent 对外服务：SpringBoot 3 + JDK 21 + MySQL(JPA) + Redis + Docker | 缓存 464ms→51ms；API Key 鉴权 + 限流；Prometheus + Swagger；17 项单测通过，5 项集成无 Docker 自动跳过 |
 | [Vela 长任务 Harness](https://github.com/yjmyp/vela) | Agent 循环/震荡治理、租约与三方合并、快照回滚、技能门禁、审计链 | 76 tests；eval 6/6；真实 DeepSeek 2 轮 1444 tokens；快照回滚逐字节校验 |
 
 ## 在线演示
