@@ -1,5 +1,7 @@
 package com.yujian.offeragent;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -26,6 +28,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api")
+@Tag(name = "OfferAgent API", description = "岗位查询、RAG 检索转发与健康检查")
 public class ApiController {
 
     private static final Logger log = LoggerFactory.getLogger(ApiController.class);
@@ -51,6 +54,7 @@ public class ApiController {
 
     /** 健康检查：报告本服务与下游 Python 服务的可达性。 */
     @GetMapping("/health")
+    @Operation(summary = "健康检查", description = "同时探活 MySQL 与下游 Python 检索服务")
     public Map<String, Object> health() {
         String downstream = "unreachable";
         try {
@@ -80,17 +84,34 @@ public class ApiController {
 
     /** 查询岗位库（MySQL + Redis 缓存），可按最低匹配分过滤（业务接口，不碰模型）。 */
     @GetMapping("/jobs")
+    @Operation(summary = "分页查询岗位库", description = "MySQL + Redis cache-aside；按匹配分倒序，LIMIT/OFFSET 下推数据库")
     public Map<String, Object> listJobs(
             @RequestParam(name = "minScore", defaultValue = "0") int minScore,
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) @Max(1000) int page,
             @RequestParam(name = "limit", defaultValue = "20") @Min(1) @Max(100) int limit) {
-        List<Job> list = jobs.list(minScore, limit);
+        Map<String, Object> pageData = jobs.list(minScore, page, limit);
+        @SuppressWarnings("unchecked")
+        List<Job> list = (List<Job>) pageData.get("jobs");
         return Map.of("total", jobs.stats().getOrDefault("total", 0),
+                      "filtered", pageData.get("filteredTotal"),
+                      "page", page, "size", limit,
                       "returned", list.size(),
                       "jobs", list);
     }
 
+    /** 按岗位名查详情；不存在返回结构化 404，而不是空对象。 */
+    @GetMapping("/jobs/{name}")
+    @Operation(summary = "按岗位名查询详情")
+    public ResponseEntity<?> job(@PathVariable String name) {
+        return jobs.find(name)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(404)
+                        .body(Map.of("error", "not_found", "name", name)));
+    }
+
     /** RAG 检索：校验入参后转发给 Python 服务（AI 能力不在 Java 侧重写）。 */
     @PostMapping(value = "/rag/search", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "RAG 检索转发", description = "校验入参后转发 Python 检索服务；下游 4xx 原样透传")
     public ResponseEntity<?> ragSearch(@Valid @RequestBody RagQuery query) {
         var body = Map.of("q", query.q().trim(), "top_k", query.topK());
         try {

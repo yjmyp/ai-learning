@@ -96,3 +96,6 @@ interview-prep/
 offeragent/desktop/dist/
 offeragent/desktop/build/
 offeragent/desktop/*.spec.bak
+
+# 本地启动日志
+java-api/run_swagger.log

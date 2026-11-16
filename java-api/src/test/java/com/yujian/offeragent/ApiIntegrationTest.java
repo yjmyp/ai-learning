@@ -8,8 +8,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -29,26 +32,32 @@ class ApiIntegrationTest extends IntegrationTestBase {
     @SpyBean
     JobDbRepository repository;
 
+    @SuppressWarnings("unchecked")
+    private List<Job> jobsOf(Map<String, Object> page) {
+        return (List<Job>) page.get("jobs");
+    }
+
     @Test
     void 启动时把夹具岗位导入MySQL() {
         Integer rows = jdbc.queryForObject("select count(*) from job", Integer.class);
         assertThat(rows).isEqualTo(2);
-        List<Job> all = jobService.list(0, 10);
-        assertThat(all).extracting(Job::name).containsExactly("job-high", "job-low");   // 按分数倒序
+        var page = jobService.list(0, 0, 10);
+        assertThat(jobsOf(page)).extracting(Job::name).containsExactly("job-high", "job-low");   // 按分数倒序
+        assertThat(page.get("filteredTotal")).isEqualTo(2L);
     }
 
     @Test
     void 相同参数第二次查走Redis不再打MySQL() {
-        redis.delete("jobs::70:5");
-        verify(repository, times(0)).findByScoreGreaterThanEqualOrderByScoreDesc(70);
+        redis.delete("jobs::70:0:5");
+        verify(repository, times(0)).findByScoreGreaterThanEqual(eq(70), any());
 
-        List<Job> first = jobService.list(70, 5);      // 未命中 → 查库 → 写缓存
-        assertThat(first).hasSize(1);
-        assertThat(redis.hasKey("jobs::70:5")).isTrue();
+        var first = jobService.list(70, 0, 5);      // 未命中 → 查库 → 写缓存
+        assertThat(jobsOf(first)).hasSize(1);
+        assertThat(redis.hasKey("jobs::70:0:5")).isTrue();
 
-        List<Job> second = jobService.list(70, 5);     // 命中缓存
-        assertThat(second).isEqualTo(first);
-        verify(repository, times(1)).findByScoreGreaterThanEqualOrderByScoreDesc(70);
+        var second = jobService.list(70, 0, 5);     // 命中缓存
+        assertThat(jobsOf(second)).isEqualTo(jobsOf(first));
+        verify(repository, times(1)).findByScoreGreaterThanEqual(eq(70), any());
     }
 
     @Test
@@ -70,8 +79,8 @@ class ApiIntegrationTest extends IntegrationTestBase {
         assertThat(health.getStatusCode().value()).isEqualTo(200);
         assertThat(health.getBody()).contains("\"mysql\":\"ok\"");
 
-        jobService.list(0, 1);      // 制造一次未命中
-        jobService.list(0, 1);      // 制造一次命中
+        jobService.list(0, 0, 1);      // 制造一次未命中
+        jobService.list(0, 0, 1);      // 制造一次命中
 
         var prom = http.getForEntity("/actuator/prometheus", String.class);
         assertThat(prom.getStatusCode().value()).isEqualTo(200);

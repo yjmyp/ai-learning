@@ -13,6 +13,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -24,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 为什么专门测 400：写完之后手测发现空 q 曾被我包成 502（下游 422 被当成服务端故障），
  * 这类"状态码语义错"的 bug 只有断言状态码才能守住。
  */
-@WebMvcTest(ApiController.class)
+@WebMvcTest(value = ApiController.class, properties = "springdoc.api-docs.enabled=false")
 @Import({ApiController.class, WebConfig.class, RateLimitInterceptor.class,
          ApiControllerTest.Meters.class})
 @AutoConfigureMockMvc(addFilters = false)   // 鉴权由 ApiKeyAuthFilterTest 单独测，这里只验控制器逻辑
@@ -51,15 +53,51 @@ class ApiControllerTest {
 
     @Test
     void 岗位查询按分数过滤并返回总数() throws Exception {
-        given(jobs.list(80, 10)).willReturn(List.of(
-                new Job("job-a", "Agent 开发", "某公司", "南京", "300/天", 88, "待投", "https://example.com/a")));
-        given(jobs.stats()).willReturn(java.util.Map.of("total", 2, "avgScore", 69, "scoreOver80", 1));
+        Job job = new Job("job-a", "Agent 开发", "某公司", "南京", "300/天", 88, "待投", "https://example.com/a");
+        given(jobs.list(80, 0, 10)).willReturn(Map.of(
+                "jobs", List.of(job), "filteredTotal", 1L, "page", 0, "size", 10));
+        given(jobs.stats()).willReturn(Map.of("total", 2, "avgScore", 69, "scoreOver80", 1));
 
         mvc.perform(get("/api/jobs").param("minScore", "80").param("limit", "10"))
            .andExpect(status().isOk())
            .andExpect(jsonPath("$.total").value(2))
+           .andExpect(jsonPath("$.filtered").value(1))
            .andExpect(jsonPath("$.returned").value(1))
            .andExpect(jsonPath("$.jobs[0].score").value(88));
+    }
+
+    @Test
+    void 岗位查询支持分页与页码回显() throws Exception {
+        given(jobs.list(0, 2, 5)).willReturn(Map.of(
+                "jobs", List.of(), "filteredTotal", 11L, "page", 2, "size", 5));
+        given(jobs.stats()).willReturn(Map.of("total", 11));
+
+        mvc.perform(get("/api/jobs").param("page", "2").param("limit", "5"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.page").value(2))
+           .andExpect(jsonPath("$.size").value(5))
+           .andExpect(jsonPath("$.filtered").value(11))
+           .andExpect(jsonPath("$.returned").value(0));
+    }
+
+    @Test
+    void 岗位详情存在返回200() throws Exception {
+        Job job = new Job("job-a", "Agent 开发", "某公司", "南京", "300/天", 88, "待投", "https://example.com/a");
+        given(jobs.find("job-a")).willReturn(Optional.of(job));
+
+        mvc.perform(get("/api/jobs/job-a"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.score").value(88));
+    }
+
+    @Test
+    void 岗位详情不存在返回结构化404() throws Exception {
+        given(jobs.find("missing")).willReturn(Optional.empty());
+
+        mvc.perform(get("/api/jobs/missing"))
+           .andExpect(status().isNotFound())
+           .andExpect(jsonPath("$.error").value("not_found"))
+           .andExpect(jsonPath("$.name").value("missing"));
     }
 
     @Test

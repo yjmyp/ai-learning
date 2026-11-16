@@ -31,7 +31,8 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     private static final String HEADER = "X-API-Key";
 
     // 免鉴权路径：健康检查（部署平台探针要用）、以及 /api/health（对本服务自身的探活）
-    private static final List<String> PUBLIC_PATHS = List.of("/api/health");
+    private static final List<String> PUBLIC_PREFIXES =
+            List.of("/api/health", "/actuator/", "/v3/api-docs", "/swagger-ui");
 
     private final String expectedKey;
 
@@ -67,8 +68,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     }
 
     private static boolean isPublic(String path) {
-        return PUBLIC_PATHS.stream().anyMatch(path::equals)
-                || path.startsWith("/actuator/");
+        return PUBLIC_PREFIXES.stream().anyMatch(path::startsWith);
     }
 
     /** 定长比较，避免时序攻击。 */

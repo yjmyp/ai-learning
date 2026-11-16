@@ -44,19 +44,33 @@ public class JobService {
         this.registry = registry;
     }
 
-    /** 按最低分过滤岗位；同样参数第二次调用直接命中 Redis，不再打 MySQL。 */
+    /** 按最低分过滤并分页；同样参数第二次调用直接命中 Redis，不再打 MySQL。 */
     @Transactional(readOnly = true)
-    public List<Job> list(int minScore, int limit) {
-        return readThrough(CACHE_JOBS, minScore + ":" + limit, () -> {
-            log.info("查 MySQL：minScore={} limit={}（没走缓存）", minScore, limit);
+    public Map<String, Object> list(int minScore, int page, int size) {
+        return readThrough(CACHE_JOBS, minScore + ":" + page + ":" + size, () -> {
+            log.info("查 MySQL：minScore={} page={} size={}（没走缓存）", minScore, page, size);
+            // Pageable 让 LIMIT/OFFSET 下推到数据库，不在内存里 skip。
+            var result = db.findByScoreGreaterThanEqual(minScore,
+                    org.springframework.data.domain.PageRequest.of(page, size,
+                            org.springframework.data.domain.Sort.by(
+                                    org.springframework.data.domain.Sort.Direction.DESC, "score")));
             // 注意：这里必须回 ArrayList，不能用 .toList() / List.of()。
-            // JSON 缓存序列化器会写入类型信息（["java.util.ImmutableCollections$ListN", [...]]），
-            // 读回来时 JDK 不可变集合没法实例化，会抛 SerializationException —— 实测 500 过。
-            return db.findByScoreGreaterThanEqualOrderByScoreDesc(minScore).stream()
-                    .limit(limit)
+            // JSON 缓存序列化器会写入类型信息，JDK 不可变集合反序列化会抛 SerializationException。
+            Map<String, Object> m = new HashMap<>();
+            m.put("jobs", result.getContent().stream()
                     .map(JobEntity::toJob)
-                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new)));
+            m.put("filteredTotal", result.getTotalElements());
+            m.put("page", page);
+            m.put("size", size);
+            return m;
         });
+    }
+
+    /** 按岗位名查详情（岗位名是主键，天然唯一）。 */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Job> find(String name) {
+        return db.findById(name).map(JobEntity::toJob);
     }
 
     /** 统计信息：给 /api/health 与看板用（平均分、达标岗位数）。 */

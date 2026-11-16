@@ -18,7 +18,7 @@ AI 请求（检索/问答）转发给已有的 Python RAG 服务。这就是「J
 
 ```powershell
 cd java-api
-mvn -B test                  # 3 个接口测试（岗位过滤 + 两个参数校验用例）
+mvn -B test                  # 22 项测试（5 项 Testcontainers 集成测试在无 Docker 时自动跳过）
 mvn -B -DskipTests package   # 产出 target/offeragent-api-0.1.0.jar
 java -jar target\offeragent-api-0.1.0.jar
 ```
@@ -35,9 +35,21 @@ $env:SERVICE_WARMUP="1"; python -m uvicorn service:app --port 8600
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/health` | 免鉴权。本服务 + **MySQL 状态** + 岗位统计（走缓存）+ **下游 Python 可达性** |
-| GET | `/api/jobs?minScore=80&limit=10` | 需 `X-API-Key`。从 **MySQL** 按匹配分查岗位（JPA），结果进 **Redis 缓存**（TTL 60s） |
+| GET | `/api/jobs?minScore=80&page=0&limit=10` | 需 `X-API-Key`。从 **MySQL** 按匹配分分页查岗位（JPA + Pageable），结果进 **Redis 缓存**（TTL 60s） |
+| GET | `/api/jobs/{name}` | 需 `X-API-Key`。按岗位名查详情；不存在返回结构化 404 |
 | POST | `/api/rag/search` | 需 `X-API-Key`。`{"q": "...", "topK": 5}` → 校验后转发给 Python 检索服务 |
 | GET | `/actuator/health` | 免鉴权（给部署平台探针）。Actuator 标准健康端点 |
+| GET | `/swagger-ui/index.html` | 免鉴权。Swagger UI；OpenAPI JSON 在 `/v3/api-docs` |
+
+## 接口文档（Swagger UI）
+
+启动后打开 <http://127.0.0.1:8080/swagger-ui/index.html>，或直接取 OpenAPI JSON：
+
+```powershell
+curl.exe http://127.0.0.1:8080/v3/api-docs
+```
+
+`/swagger-ui/**`、`/v3/api-docs` 与探针一样免 API Key，方便本地联调；业务接口仍全部需要 `X-API-Key`。
 
 ## 鉴权（2026-10-09 加）
 
