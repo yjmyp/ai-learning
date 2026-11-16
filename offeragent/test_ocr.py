@@ -20,8 +20,8 @@ def make_image(path: Path) -> str:
             except Exception:
                 continue
     lines = ["余剑 南京邮电大学 网络工程 2027届",
-             "项目：RAG 知识库问答系统（已上线）",
-             "top-1/3/5 = 75% / 83% / 92%",
+             "项目：RAG 检索问答服务（本地可复现）",
+             "240 条评估集 / R@5 95%",
              "技能：Python Chroma FastAPI"]
     for i, t in enumerate(lines):
         d.text((30, 25 + i * 58), t, fill="black", font=font)
@@ -42,7 +42,7 @@ def main():
         text = "\n".join(x[1] for x in (result or []))
         print("\nOCR 识别结果：")
         print(text)
-        hits = sum(1 for kw in ["南京邮电大学", "网络工程", "RAG", "Python", "83"]
+        hits = sum(1 for kw in ["南京邮电大学", "网络工程", "RAG", "Python", "95"]
                    if kw in text)
         print(f"\n关键信息命中 {hits}/5")
     except Exception as e:

@@ -30,6 +30,7 @@ import job_detail
 import doc_io
 import build_info
 import privacy_tools
+import demo_data
 import resume_builder
 import resume_clean
 import resume_templates
@@ -71,132 +72,149 @@ def page_advice():
 
 def page_settings():
     hero("设置", "API Key 与模型配置")
-    ensure_dirs()
-    api_key = get_api_key()
-    if api_key:
-        st.success("API Key 已配置（来自 Secrets/环境变量/本地配置）")
-    else:
-        st.warning("未配置 API Key")
-    cfg = json.loads(read_text(CONFIG_PATH, "{}"))
-    new_key = st.text_input("DeepSeek API Key（只保存在本机 data/config.json，不上传）",
-                            value=cfg.get("api_key", ""), type="password")
-    model = st.selectbox("模型", MODEL_OPTIONS,
-                         index=MODEL_OPTIONS.index(cfg.get("model", DEFAULT_MODEL))
-                         if cfg.get("model") in MODEL_OPTIONS else 0)
-    if st.button("💾 保存设置", type="primary"):
-        cfg["api_key"] = new_key.strip()
-        cfg["model"] = model
-        write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
-        st.success("设置已保存")
-    st.markdown("---")
-    st.markdown("##### 🎯 每日投递目标")
-    st.caption("定一个每天要投几家的数，首屏会显示今天的完成进度。"
+    with st.container(border=True, key="oa-card-settings"):
+        ensure_dirs()
+        api_key = get_api_key()
+        if api_key:
+            st.success("API Key 已配置（来自 Secrets/环境变量/本地配置）")
+        else:
+            st.warning("未配置 API Key")
+        cfg = json.loads(read_text(CONFIG_PATH, "{}"))
+        new_key = st.text_input("DeepSeek API Key（只保存在本机 data/config.json，不上传）",
+                                value=cfg.get("api_key", ""), type="password")
+        model = st.selectbox("模型", MODEL_OPTIONS,
+                             index=MODEL_OPTIONS.index(cfg.get("model", DEFAULT_MODEL))
+                             if cfg.get("model") in MODEL_OPTIONS else 0)
+        if st.button("💾 保存设置", type="primary"):
+            cfg["api_key"] = new_key.strip()
+            cfg["model"] = model
+            write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+            st.success("设置已保存")
+        st.markdown("---")
+        st.markdown("##### 🎯 每日投递目标")
+        st.caption("定一个每天要投几家的数，首屏会显示今天的完成进度。"
                "别定太高——连续投递比一次投很多更重要。")
-    _tgt_now = int(cfg.get("daily_target", 3) or 3)
-    tgt_new = st.number_input("每天投几家", min_value=1, max_value=20,
-                              value=_tgt_now, key="set_target_in")
-    if st.button("保存投递目标", key="set_target_save"):
-        cfg["daily_target"] = int(tgt_new)
-        write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
-        st.success(f"已保存：每天 {int(tgt_new)} 家")
-    st.markdown("---")
-    st.markdown("##### 💰 花费保护：每天最多调用几次模型")
-    st.caption("公开链接被人乱点、或你自己狂跑批量匹配，都是按调用次数烧钱的。"
+        _tgt_now = int(cfg.get("daily_target", 3) or 3)
+        tgt_new = st.number_input("每天投几家", min_value=1, max_value=20,
+                                  value=_tgt_now, key="set_target_in")
+        if st.button("保存投递目标", key="set_target_save"):
+            cfg["daily_target"] = int(tgt_new)
+            write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+            st.success(f"已保存：每天 {int(tgt_new)} 家")
+        st.markdown("---")
+        st.markdown("##### 💰 花费保护：每天最多调用几次模型")
+        st.caption("公开链接被人乱点、或你自己狂跑批量匹配，都是按调用次数烧钱的。"
                "这里设一个每日上限，超过就拒绝调用并提示。填 0 = 不限制。")
-    _lim_now = daily_limit()
-    _left, _ = usage_left()
-    new_lim = st.number_input("每日调用上限（次）", min_value=0, max_value=100000,
-                              value=int(cfg.get("daily_call_limit", 200) or 200),
-                              step=50, key="lim_in")
-    st.caption(f"当前生效：{'不限' if _lim_now <= 0 else str(_lim_now) + ' 次'}　·　"
+        _lim_now = daily_limit()
+        _left, _ = usage_left()
+        new_lim = st.number_input("每日调用上限（次）", min_value=0, max_value=100000,
+                                  value=int(cfg.get("daily_call_limit", 200) or 200),
+                                  step=50, key="lim_in")
+        st.caption(f"当前生效：{'不限' if _lim_now <= 0 else str(_lim_now) + ' 次'}　·　"
                f"今天已用 {0 if _lim_now <= 0 else _lim_now - _left} 次")
-    if st.button("保存上限", key="lim_save"):
-        cfg["daily_call_limit"] = int(new_lim)
-        write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
-        st.success("已保存。部署版也可以在 Secrets 里加 `DAILY_CALL_LIMIT = \"100\"` 覆盖。")
-    st.markdown("---")
-    st.markdown("##### 连接测试")
-    if st.button("🔌 测试 API 连接"):
-        with st.spinner("测试中…"):
-            try:
-                st.success(f"连接正常：{ask_chat('只回复两个字：正常')[:50]}")
-            except Exception as e:
-                st.error(str(e))
-    st.markdown("---")
-    st.caption("部署到 Streamlit Cloud：Settings → Secrets 填入 "
+        if st.button("保存上限", key="lim_save"):
+            cfg["daily_call_limit"] = int(new_lim)
+            write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+            st.success("已保存。部署版也可以在 Secrets 里加 `DAILY_CALL_LIMIT = \"100\"` 覆盖。")
+        st.markdown("---")
+        st.markdown("##### 🧪 演示数据（空库时一键填满）")
+        st.caption("岗位库是空的时候点一下，就有 6 个示例岗位 + 一份示例画像，"
+               "方便演示、截图、给面试官看。只写带 demo 标记的数据，**绝不覆盖你自己的岗位**；"
+               "「清除演示数据」也只删带标记的那些。")
+        _demo_n = len(demo_data.demo_job_names())
+        _real_n = demo_data.real_job_count()
+        st.caption(f"当前：真实岗位 **{_real_n}** 个　·　演示岗位 **{_demo_n}** 个")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            if st.button("载入演示数据", key="demo_seed", use_container_width=True):
+                st.success(demo_data.seed_demo())
+        with _c2:
+            if st.button("清除演示数据", key="demo_clear", use_container_width=True):
+                st.success(demo_data.clear_demo())
+
+        st.markdown("---")
+        st.markdown("##### 连接测试")
+        if st.button("🔌 测试 API 连接"):
+            with st.spinner("测试中…"):
+                try:
+                    st.success(f"连接正常：{ask_chat('只回复两个字：正常')[:50]}")
+                except Exception as e:
+                    st.error(str(e))
+        st.markdown("---")
+        st.caption("部署到 Streamlit Cloud：Settings → Secrets 填入 "
                "`DEEPSEEK_API_KEY = \"sk-...\"` 即可。")
-    st.markdown("---")
-    st.caption("分享链接、名片页、简历导出都在「📇 展示」页；"
+        st.markdown("---")
+        st.caption("分享链接、名片页、简历导出都在「📇 展示」页；"
                "照片、简历正文和模板在「🎯 找工作 → 简历」页。")
-    st.markdown("---")
-    # ---------------- 运行版本：本地和云端一对比就知道有没有"跑旧代码/旧版本" ----------------
-    st.markdown("##### 🧾 运行版本")
-    _bi = build_info.describe()
-    st.caption(f"Streamlit `{_bi['streamlit']}`　·　Python `{_bi['python']}`"
+        st.markdown("---")
+        # ---------------- 运行版本：本地和云端一对比就知道有没有"跑旧代码/旧版本" ----------------
+        st.markdown("##### 🧾 运行版本")
+        _bi = build_info.describe()
+        st.caption(f"Streamlit `{_bi['streamlit']}`　·　Python `{_bi['python']}`"
                f"　·　代码指纹 `{_bi['code']}`")
-    st.caption("这两个数字本地和云端各看一眼：**对不上**说明云端还在跑旧代码"
+        st.caption("这两个数字本地和云端各看一眼：**对不上**说明云端还在跑旧代码"
                "（Streamlit Cloud 要点 Manage app → Reboot）或装的 Streamlit 版本不同"
                "——那意味着「本地全绿」证明不了云端没事。")
-    st.markdown("---")
-    st.markdown("##### 🔒 访问密码（上线公网前设置）")
-    st.caption("设置后访问应用需要先输密码。密码以 SHA-256 哈希保存在本机 config.json，"
+        st.markdown("---")
+        st.markdown("##### 🔒 访问密码（上线公网前设置）")
+        st.caption("设置后访问应用需要先输密码。密码以 SHA-256 哈希保存在本机 config.json，"
                "不存明文；部署时也可用 Secrets 的 `APP_PASSWORD`。")
-    cur_pw = st.text_input("设置/修改访问密码（留空 = 清除密码）", type="password",
-                           key="set_pw")
-    if st.button("保存密码", key="set_pw_save"):
-        if cur_pw.strip():
-            cfg["app_password_hash"] = v41.hash_password(cur_pw.strip())
-            write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
-            st.success("访问密码已设置（哈希保存）。")
-        else:
-            cfg.pop("app_password_hash", None)
-            write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
-            st.success("已清除访问密码。")
+        cur_pw = st.text_input("设置/修改访问密码（留空 = 清除密码）", type="password",
+                               key="set_pw")
+        if st.button("保存密码", key="set_pw_save"):
+            if cur_pw.strip():
+                cfg["app_password_hash"] = v41.hash_password(cur_pw.strip())
+                write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+                st.success("访问密码已设置（哈希保存）。")
+            else:
+                cfg.pop("app_password_hash", None)
+                write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
+                st.success("已清除访问密码。")
 
-    # ---------------- 隐私与数据（上线给陌生人用之前的合规要求） ----------------
-    st.markdown("---")
-    st.markdown("##### 🔐 隐私与数据（你的数据在哪、怎么带走、怎么删）")
-    st.caption("你在本应用里输入的一切（简历、画像、岗位库、投递记录、复盘）都只存在**运行这个应用的机器**上的 "
+        # ---------------- 隐私与数据（上线给陌生人用之前的合规要求） ----------------
+        st.markdown("---")
+        st.markdown("##### 🔐 隐私与数据（你的数据在哪、怎么带走、怎么删）")
+        st.caption("你在本应用里输入的一切（简历、画像、岗位库、投递记录、复盘）都只存在**运行这个应用的机器**上的 "
                "`offeragent/data/` 目录，不会上传到开发者服务器；只有调用模型时，相关文本会发给 DeepSeek API。"
                "不想用了就一键带走或一键清空。")
-    try:
-        _sum = privacy_tools.data_summary()
-        st.caption(f"当前数据：**{_sum['files']} 个文件 / {_sum['mb']} MB**　"
+        try:
+            _sum = privacy_tools.data_summary()
+            st.caption(f"当前数据：**{_sum['files']} 个文件 / {_sum['mb']} MB**　"
                    f"（{_sum['dir']}）")
-    except Exception as _e:
-        st.caption(f"数据目录读取失败：{_e}")
+        except Exception as _e:
+            st.caption(f"数据目录读取失败：{_e}")
 
-    _c1, _c2 = st.columns(2)
-    with _c1:
-        if st.button("📦 打包我的全部数据", key="priv_export"):
-            try:
-                st.session_state["_priv_blob"] = privacy_tools.export_bytes()
-            except Exception as _e:
-                st.error(f"导出失败：{_e}")
-        if st.session_state.get("_priv_blob"):
-            st.download_button("⬇️ 下载 zip 备份", st.session_state["_priv_blob"],
-                               file_name=privacy_tools.export_filename(),
-                               mime="application/zip", key="priv_dl")
-    with _c2:
-        _confirm = st.text_input('要清空全部数据，请先输入「删除」两个字',
-                                 key="priv_confirm")
-        if st.button("🗑️ 删除我的全部数据", key="priv_del"):
-            if _confirm.strip() == "删除":
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            if st.button("📦 打包我的全部数据", key="priv_export"):
                 try:
-                    _nf, _nd = privacy_tools.purge()
-                    st.session_state.pop("_priv_blob", None)
-                    st.success(f"已清空：删除 {_nf} 个文件 / {_nd} 个子目录。刷新页面即从空数据开始。")
+                    st.session_state["_priv_blob"] = privacy_tools.export_bytes()
                 except Exception as _e:
-                    st.error(f"清空失败：{_e}")
-            else:
-                st.warning("没执行：确认框里要输入「删除」两个字。")
-    st.caption("提示：清空会删掉简历、画像、岗位库、投递记录等全部个人数据，"
+                    st.error(f"导出失败：{_e}")
+            if st.session_state.get("_priv_blob"):
+                st.download_button("⬇️ 下载 zip 备份", st.session_state["_priv_blob"],
+                                   file_name=privacy_tools.export_filename(),
+                                   mime="application/zip", key="priv_dl")
+        with _c2:
+            _confirm = st.text_input('要清空全部数据，请先输入「删除」两个字',
+                                     key="priv_confirm")
+            if st.button("🗑️ 删除我的全部数据", key="priv_del"):
+                if _confirm.strip() == "删除":
+                    try:
+                        _nf, _nd = privacy_tools.purge()
+                        st.session_state.pop("_priv_blob", None)
+                        st.success(f"已清空：删除 {_nf} 个文件 / {_nd} 个子目录。刷新页面即从空数据开始。")
+                    except Exception as _e:
+                        st.error(f"清空失败：{_e}")
+                else:
+                    st.warning("没执行：确认框里要输入「删除」两个字。")
+        st.caption("提示：清空会删掉简历、画像、岗位库、投递记录等全部个人数据，"
                "但保留本机配置（API Key / 主题 / 每日目标）。"
                "数据目录在 `offeragent/data/`，也可以直接在文件管理器里删。")
-    _pp_path = Path(__file__).with_name("docs") / "privacy_policy.md"
-    if _pp_path.exists():
-        with st.expander("📄 隐私政策与用户协议（草案，公开前按你的部署主体核对）"):
-            st.markdown(read_text(_pp_path, ""))   # store.read_text 收 Path，传字符串会崩
+        _pp_path = Path(__file__).with_name("docs") / "privacy_policy.md"
+        if _pp_path.exists():
+            with st.expander("📄 隐私政策与用户协议（草案，公开前按你的部署主体核对）"):
+                st.markdown(read_text(_pp_path, ""))   # store.read_text 收 Path，传字符串会崩
 
 
 # ============================================================
@@ -282,66 +300,177 @@ def page_company():
 
 
 def page_drill():
-    """面试拷问：AI 当面试官，逐题点评。"""
-    hero("面试拷问", "AI 当面试官追问你；每答一题给三段反馈。可中断续答")
+    """面试陪练：像聊天一样一题一题过，答完自动点评。"""
+    hero("面试陪练", "像聊天一样回答；每答一题当场点评，可中断续答")
     jobs = [j for j in list_jobs() if j[1]["status"] != "排除"]
     if not jobs:
         st.info("先到「🎯 找工作 → 岗位库」添加岗位")
         return
-    name = st.selectbox("针对哪个岗位练", [j[0] for j in jobs], key="drill_pick")
-    jd = read_text(JDS_DIR / f"{name}.txt")
-    profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
-    state = interview_drill.load_state(name)
 
-    c1, c2 = st.columns([1, 1])
-    if c1.button("🎤 生成 10 个追问（调用 DeepSeek）", type="primary"):
-        with st.spinner("面试官在想问题…"):
-            try:
-                text, qs = interview_drill.make_questions(profile, jd,
-                                                          lambda p: ask_chat(p))
-                state["questions"] = text
-                state["items"] = [{"q": q, "a": "", "f": ""} for q in qs]
-                interview_drill.save_state(state)
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
-    if c2.button("↺ 重来（清空这个岗位的记录）"):
-        state = {"job": name, "questions": "", "items": []}
-        interview_drill.save_state(state)
-        st.rerun()
+    with st.container(border=True, key="oa-card-drill"):
+        name = st.selectbox("针对哪个岗位练", [j[0] for j in jobs], key="drill_pick")
+        jd = read_text(JDS_DIR / f"{name}.txt")
+        profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
+        state = interview_drill.load_state(name)
+
+        c1, c2 = st.columns([1, 1])
+        if c1.button("🎤 生成 10 个追问（调用 DeepSeek）", type="primary"):
+            with st.spinner("面试官在想问题…"):
+                try:
+                    text, qs = interview_drill.make_questions(profile, jd,
+                                                              lambda p: ask_chat(p))
+                    state["questions"] = text
+                    state["items"] = [{"q": q, "a": "", "f": "", "fu": None}
+                                      for q in qs]
+                    interview_drill.save_state(state)
+                    st.session_state["_drill_added"] = interview_drill.save_questions(
+                        qs, name)
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if c2.button("↺ 重来（清空这个岗位的记录）"):
+            state = {"job": name, "questions": "", "items": []}
+            interview_drill.save_state(state)
+            st.rerun()
+
+        _added = st.session_state.pop("_drill_added", 0)
+        if _added:
+            st.caption(f"✅ 已沉淀 {_added} 道新题到题库")
+        interview_drill.ensure_seed()   # 幂等：首次进页面把预置题并入题库
+        _bank = interview_drill.bank_stats()
+        if _bank:
+            with st.expander("📚 题库（{} 道，跨岗位沉淀）".format(
+                    sum(_bank.values())), expanded=False):
+                st.caption("　".join(f"{k} **{v}**" for k, v in _bank.items()))
+                st.caption("标「预置」的是通用高频题（自己练过的会自动变成「用过 N 次」）")
+                for _r in interview_drill.load_bank()[-30:]:
+                    st.markdown(f"- `{_r.get('kind', '其它')}` {_r.get('q', '')}"
+                                f"　·　{interview_drill.row_tag(_r)}")
 
     items = state.get("items") or []
     if not items:
         st.caption("点上面的按钮开始。生成的题目会存在本地，明天回来接着答。")
         return
 
-    answered = sum(1 for it in items if it.get("a", "").strip())
+    answered = sum(1 for it in items if str(it.get("a") or "").strip())
     st.progress(answered / len(items), text=f"已答 {answered} / {len(items)} 题")
-    for i, it in enumerate(items):
-        with st.expander(f"{i + 1}. {it['q'][:60]}", expanded=(i == answered)):
-            ans = st.text_area("你的回答", it.get("a", ""), key=f"ans_{name}_{i}", height=110)
-            if st.button(f"提交第 {i + 1} 题并要反馈", key=f"fb_{name}_{i}"):
-                if not ans.strip():
-                    st.warning("先写点内容")
-                else:
-                    with st.spinner("面试官在点评…"):
-                        try:
-                            it["a"] = ans.strip()
-                            it["f"] = interview_drill.feedback(it["q"], it["a"],
-                                                               lambda p: ask_chat(p))
-                            interview_drill.save_state(state)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
-            if it.get("f"):
-                st.markdown(it["f"])
 
-    if answered == len(items):
+    _avg = interview_drill.dim_avg(items)
+    if _avg:
+        st.caption("本轮四维均分　" + "　".join(
+            f"{k} **{_avg[k]}**" for k in interview_drill.SCORE_DIMS if k in _avg))
+    _hist = [h for h in interview_drill.load_history() if h.get("job") == name]
+    if len(_hist) >= 2:
+        with st.expander(f"📈 分数趋势（这个岗位练过 {len(_hist)} 次）",
+                         expanded=False):
+            st.line_chart({"平均分（0-10）":
+                           [h.get("avg") or 0 for h in _hist]})
+            st.caption("最近一次：" + str(_hist[-1].get("avg"))
+                       + " / 10（刚才那次要点「生成总评」才会入库）")
+
+    # ---- 对话流：只渲染到当前题，未答到的题不提前泄露 ----
+    _cur = next((i for i, it in enumerate(items)
+                 if not str(it.get("a") or "").strip()), None)
+    _fu_i = None
+    if _cur is None:
+        _fu_i = next((i for i, it in enumerate(items)
+                      if it.get("fu") and not str(it["fu"].get("a") or "").strip()), None)
+    _show_n = len(items) if _cur is None else _cur + 1
+    _last_answered = max((i for i, it in enumerate(items)
+                          if str(it.get("a") or "").strip()), default=-1)
+
+    for i, it in enumerate(items[:_show_n]):
+        with st.chat_message("assistant"):
+            st.markdown(f"**Q{i + 1}.** {it['q']}")
+        if str(it.get("a") or "").strip():
+            with st.chat_message("user"):
+                st.markdown(it["a"])
+        if it.get("f"):
+            with st.chat_message("assistant"):
+                st.markdown(it["f"])
+                if it.get("s"):
+                    st.caption("评分　" + "　".join(
+                        f"{k} {v}" for k, v in it["s"].items()))
+                if (i == _last_answered and not it.get("fu")
+                        and _cur is None and _fu_i is None):
+                    if st.button("↳ 让面试官追问这一题", key=f"fu_{name}_{i}"):
+                        with st.spinner("面试官在追问…"):
+                            try:
+                                it["fu"] = {"q": interview_drill.make_followup(
+                                    it["q"], it.get("a", ""), lambda p: ask_chat(p)),
+                                    "a": "", "f": ""}
+                                interview_drill.save_state(state)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(str(e))
+        if it.get("fu"):
+            _fu = it["fu"]
+            with st.chat_message("assistant"):
+                st.markdown(f"**追问：** {_fu.get('q', '')}")
+            if str(_fu.get("a") or "").strip():
+                with st.chat_message("user"):
+                    st.markdown(_fu["a"])
+            if _fu.get("f"):
+                with st.chat_message("assistant"):
+                    st.markdown(_fu["f"])
+                    if _fu.get("s"):
+                        st.caption("追问评分　" + "　".join(
+                            f"{k} {v}" for k, v in _fu["s"].items()))
+
+    # ---- 单一输入框：当前题 / 当前追问 ----
+    if _cur is not None:
+        _ans = st.chat_input(f"回答第 {_cur + 1} 题…（Enter 提交，自动点评）",
+                             key="drill_chat_in")
+        if _ans and _ans.strip():
+            with st.spinner("面试官在点评…"):
+                try:
+                    items[_cur]["a"] = _ans.strip()
+                    items[_cur]["f"], items[_cur]["s"] = interview_drill.feedback_scored(
+                        items[_cur]["q"], items[_cur]["a"], lambda p: ask_chat(p))
+                    interview_drill.save_state(state)
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+    elif _fu_i is not None:
+        _fans = st.chat_input("回答追问…（Enter 提交）", key="drill_chat_in")
+        if _fans and _fans.strip():
+            with st.spinner("点评中…"):
+                try:
+                    _fu = items[_fu_i]["fu"]
+                    _fu["a"] = _fans.strip()
+                    _fu["f"], _fu["s"] = interview_drill.feedback_scored(
+                        _fu.get("q", ""), _fu["a"], lambda p: ask_chat(p))
+                    interview_drill.save_state(state)
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+    else:
+        st.success("10 道题都答完了。下面可以生成总评，或点上面某题的「追问」再练一层。")
+
+        _db = interview_drill.debrief(items)
+        if _db["answered"]:
+            with st.expander("📊 本轮复盘报告（本地规则计算）", expanded=True):
+                _m1, _m2, _m3 = st.columns(3)
+                _m1.metric("已答", f"{_db['answered']}/{_db['total']}")
+                _m2.metric("四维均分", _db["avg"] if _db["avg"] is not None else "—")
+                _m3.metric("STAR 完整度", f"{int(_db['star_rate'] * 100)}%")
+                if _db["dims"]:
+                    st.caption("　".join(f"{k} **{v}**" for k, v in _db["dims"].items()))
+                st.markdown("**下一步先改这些：**")
+                for _f in _db["fixes"]:
+                    st.markdown(f"- {_f}")
+
         if st.button("📋 生成总评（最危险的三个问题 + 该补的一件事）", type="primary"):
             with st.spinner("汇总中…"):
                 try:
                     st.session_state[f"drill_review_{name}"] = interview_drill.total_review(
                         items, lambda p: ask_chat(p))
+                    import time as _t
+                    interview_drill.add_history({
+                        "job": name, "ts": _t.strftime("%Y-%m-%d %H:%M"),
+                        "avg": interview_drill.session_avg(items),
+                        "dims": interview_drill.dim_avg(items),
+                        "answered": len(items)})
                 except Exception as e:
                     st.error(str(e))
         if st.session_state.get(f"drill_review_{name}"):
@@ -372,101 +501,102 @@ def page_applications():
     在三个页面各算一遍。
     """
     hero("投递记录", "每一条投了什么、用了什么话术、该跟进谁")
-    rows = apply_assist.load_applications()
-    all_jobs = list_jobs()
-    applied_jobs = [j for j in all_jobs
-                    if j[1]["status"] in ("已投", "面试中", "已拒", "Offer")]
-    st.caption(f"共 {len(rows)} 条记录。漏斗和趋势在「🚀 今天 → 数据与日志」里看。")
+    with st.container(border=True, key="oa-card-records"):
+        rows = apply_assist.load_applications()
+        all_jobs = list_jobs()
+        applied_jobs = [j for j in all_jobs
+                        if j[1]["status"] in ("已投", "面试中", "已拒", "Offer")]
+        st.caption(f"共 {len(rows)} 条记录。漏斗和趋势在「🚀 今天 → 数据与日志」里看。")
 
-    # 跟进提醒
-    follow = pipeline.needs_followup(all_jobs, days=7)
-    if follow:
-        st.markdown("### ⏰ 该跟进了（投出去超过 7 天没更新状态）")
-        for f in follow[:8]:
-            st.markdown(f"- **{f['meta'].get('company') or f['name']}** · {f['name']}"
+        # 跟进提醒
+        follow = pipeline.needs_followup(all_jobs, days=7)
+        if follow:
+            st.markdown("### ⏰ 该跟进了（投出去超过 7 天没更新状态）")
+            for f in follow[:8]:
+                st.markdown(f"- **{f['meta'].get('company') or f['name']}** · {f['name']}"
                         f" · 已投 {f['days']} 天")
-        st.caption("跟进话术去「投递台 → 单条精修」用「内推消息」或「BOSS 打招呼」模板改写。")
-    else:
-        st.caption("暂时没有需要跟进的岗位（投出去满 7 天会自动出现在这里）。")
+            st.caption("跟进话术去「投递台 → 单条精修」用「内推消息」或「BOSS 打招呼」模板改写。")
+        else:
+            st.caption("暂时没有需要跟进的岗位（投出去满 7 天会自动出现在这里）。")
 
-    # 邮件 / 消息 → 状态识别（粘贴式，不接邮箱）
-    with st.expander("📨 收到邮件或消息？粘贴进来，帮你判断该怎么改状态"):
-        st.caption("不接邮箱、不要授权。你把内容粘进来，程序判断类型并给改状态的建议。"
+        # 邮件 / 消息 → 状态识别（粘贴式，不接邮箱）
+        with st.expander("📨 收到邮件或消息？粘贴进来，帮你判断该怎么改状态"):
+            st.caption("不接邮箱、不要授权。你把内容粘进来，程序判断类型并给改状态的建议。"
                    "内容不会上传保存，除非你自己点保存。")
-        mail = st.text_area("粘贴邮件或聊天内容", key="inbox_text", height=160,
-                            placeholder="例：您好，我们想邀请您参加线上技术面试，时间定在……")
-        if st.button("🔎 判断这是什么消息", key="inbox_go"):
-            if not mail.strip():
-                st.warning("先粘贴内容")
-            else:
-                with st.spinner("判断中…"):
-                    try:
-                        info = inbox_parse.classify(mail, lambda p: ask_chat(p))
-                        st.session_state["inbox_out"] = info
-                    except Exception as e:
-                        st.error(str(e))
-        info = st.session_state.get("inbox_out")
-        if info:
-            st.success(f"类型：**{info['type']}**"
+            mail = st.text_area("粘贴邮件或聊天内容", key="inbox_text", height=160,
+                                placeholder="例：您好，我们想邀请您参加线上技术面试，时间定在……")
+            if st.button("🔎 判断这是什么消息", key="inbox_go"):
+                if not mail.strip():
+                    st.warning("先粘贴内容")
+                else:
+                    with st.spinner("判断中…"):
+                        try:
+                            info = inbox_parse.classify(mail, lambda p: ask_chat(p))
+                            st.session_state["inbox_out"] = info
+                        except Exception as e:
+                            st.error(str(e))
+            info = st.session_state.get("inbox_out")
+            if info:
+                st.success(f"类型：**{info['type']}**"
                        f"{'　公司：' + info['company'] if info['company'] else ''}"
                        f"{'　岗位：' + info['job'] if info['job'] else ''}"
                        f"{'　时间：' + info['time'] if info['time'] else ''}")
-            st.info("建议：" + info["hint"])
-            st.caption("改状态请去「岗位」→ 岗位库，或「今日」里点对应岗位的按钮。"
+                st.info("建议：" + info["hint"])
+                st.caption("改状态请去「岗位」→ 岗位库，或「今日」里点对应岗位的按钮。"
                        "程序不会自动改，避免误判。")
 
-    # 被拒归因
-    rejected = [r for r in rows if r.get("status") == "已拒"]
-    rejected_names = [n for n, m, _ in all_jobs if m.get("status") == "已拒"]
-    if rejected_names:
-        st.markdown("### 🔍 被拒归因")
-        st.caption(f"库里标记为「已拒」的岗位有 {len(rejected_names)} 个。"
+        # 被拒归因
+        rejected = [r for r in rows if r.get("status") == "已拒"]
+        rejected_names = [n for n, m, _ in all_jobs if m.get("status") == "已拒"]
+        if rejected_names:
+            st.markdown("### 🔍 被拒归因")
+            st.caption(f"库里标记为「已拒」的岗位有 {len(rejected_names)} 个。"
                    "连续被拒 3 个以上时，归因才有参考价值。")
-        if len(rejected_names) >= 3:
-            if st.button("分析这些被拒岗位的共同点（调用 DeepSeek）"):
-                with st.spinner("分析中…"):
-                    try:
-                        recs = [{"job": n, "company": m.get("company"),
-                                 "score": m.get("match_score"), "note": ""}
-                                for n, m, _ in all_jobs if m.get("status") == "已拒"]
-                        st.session_state["reject_analysis"] = pipeline.analyze_rejections(
-                            recs, lambda p: ask_chat(p))
-                    except Exception as e:
-                        st.error(str(e))
-            if st.session_state.get("reject_analysis"):
-                st.markdown(st.session_state["reject_analysis"])
-        else:
-            st.info(f"现在只有 {len(rejected_names)} 个「已拒」，再多几个再跑归因。")
+            if len(rejected_names) >= 3:
+                if st.button("分析这些被拒岗位的共同点（调用 DeepSeek）"):
+                    with st.spinner("分析中…"):
+                        try:
+                            recs = [{"job": n, "company": m.get("company"),
+                                     "score": m.get("match_score"), "note": ""}
+                                    for n, m, _ in all_jobs if m.get("status") == "已拒"]
+                            st.session_state["reject_analysis"] = pipeline.analyze_rejections(
+                                recs, lambda p: ask_chat(p))
+                        except Exception as e:
+                            st.error(str(e))
+                if st.session_state.get("reject_analysis"):
+                    st.markdown(st.session_state["reject_analysis"])
+            else:
+                st.info(f"现在只有 {len(rejected_names)} 个「已拒」，再多几个再跑归因。")
 
-    if not rows and not applied_jobs:
-        st.info("还没有投递记录。去「🚀 今日」投第一家，投完点「标记已投」就会记在这里。")
-        return
+        if not rows and not applied_jobs:
+            empty_state("还没有投递记录", "去「今天」投第一家，投完点「标记已投」就会记在这里。", icon="📋")
+            return
 
-    if rows:
-        st.markdown("### 投递流水")
-        for r in rows[:30]:
-            with st.expander(f"**{r.get('company') or r['job']}** · {r['job']} · "
+        if rows:
+            st.markdown("### 投递流水")
+            for r in rows[:30]:
+                with st.expander(f"**{r.get('company') or r['job']}** · {r['job']} · "
                              f"{r.get('time', '')[:16]}"
                              f"{' · 匹配度 ' + str(r['score']) if r.get('score') else ''}"):
-                if r.get("url"):
-                    st.caption("岗位链接：" + r["url"])
-                if r.get("talk"):
-                    st.markdown("**当时发的话术**")
-                    st.code(r["talk"], language="text")
-                else:
-                    st.caption("没存话术（当时可能没用工具生成）")
-                if r.get("note"):
-                    st.caption("备注：" + r["note"])
+                    if r.get("url"):
+                        st.caption("岗位链接：" + r["url"])
+                    if r.get("talk"):
+                        st.markdown("**当时发的话术**")
+                        st.code(r["talk"], language="text")
+                    else:
+                        st.caption("没存话术（当时可能没用工具生成）")
+                    if r.get("note"):
+                        st.caption("备注：" + r["note"])
 
-    if applied_jobs:
-        st.markdown("### 岗位库里的投递状态")
-        for name, meta, _ in applied_jobs:
-            st.markdown(
-                f"- {status_tag(meta.get('status', '已投'))} **{meta.get('company') or name}**"
+        if applied_jobs:
+            st.markdown("### 岗位库里的投递状态")
+            for name, meta, _ in applied_jobs:
+                st.markdown(
+                    f"- {status_tag(meta.get('status', '已投'))} **{meta.get('company') or name}**"
                 f" · {name}"
                 f"{' · 匹配度 ' + str(meta.get('match_score')) if meta.get('match_score') else ''}"
                 f"{' · ' + meta.get('applied_at', '')[:16] if meta.get('applied_at') else ''}",
-                unsafe_allow_html=True)
+                    unsafe_allow_html=True)
 
 
 # ============================================================

@@ -23,7 +23,7 @@
 用户给一个目标 → 模型自主规划 → 依次调用工具 → 根据每个结果决定下一步 → 执行类动作停在人确认
 ```
 
-- **工具注册表**：8 个工具统一 schema（assess_job / split_jd / match_job / generate_talk / check_talk / funnel / needs_followup / open_application🔒），全部复用本项目现有函数，不新造业务逻辑
+- **工具注册表**：10 个工具统一 schema（assess_job / split_jd / match_job / generate_talk / check_talk / funnel / needs_followup / review_status / forget_fact / open_application🔒），全部复用本项目现有函数，不新造业务逻辑
 - **状态对象 + ReAct 循环**：messages + 记忆 + trace + 预算上限（防死循环）
 - **安全边界**：执行类动作（打开投递链接）标记 `human_confirm`，必须停在用户确认——"发送前那一下永远由人做"不变
 - **可观测**：每步工具调用写入 trace，可导出复盘
@@ -41,19 +41,22 @@
 > - **引擎三升级（2026-09-29 第三批）**：
 >   - **匹配分门禁**：`GATE_SCORE=60`——match_job 返回 `verdict`（建议投 / 不建议投），日志带裁决列，低于 60 分自动提示别投空
 >   - **记忆落盘 SQLite**：`agent_memory.py` v2，`Memory(db_path=...)` 把事实/对话写入 `data/memory.db`，**跨会话记住用户**（无 db_path 保持纯内存，向后兼容）
->   - **多 Agent 协作**：`offer_agent_multi.py`——主管（Supervisor，唯一工具 dispatch）+ 子 Agent（岗位分析师：assess/split/match；话术专家：generate/check；**投递复盘员：funnel/needs_followup**，独立状态与角色提示词）；CLI `--multi` 跑通（Calix 匹配 82、门禁建议投、话术截断自动重派自纠错、复盘员漏斗分析端到端通过）；Web 批量处理跟随运行模式（单/多 Agent）；投递动作（open_application）不在子 Agent 工具集，永远人确认
+>   - **多 Agent 双模式**：`offer_agent_multi.py` 现在有两条路径。
+>     - **确定性流水线（生产默认）**：岗位分析师（assess/split/match）→ 话术专家（generate/check）→ 评审员（只 check，不改写）；`required_tools` 强制每步闭环，代码级门禁再检查匹配分、空话术、禁用词；CLI `--pipeline`。
+>     - **主管自主分派（探索型）**：Supervisor 只持 dispatch，由模型决定调用哪个子 Agent；保留投递复盘员（review_status/funnel/needs_followup）；CLI `--multi`。
+>     - 两条路径的子 Agent 都有独立状态、独立工具子集和独立记忆库；`open_application` 不在任何 Worker 工具集，投递永远停在人确认。离线测试 `python test_multi_agent_pipeline.py` 验证顺序、工具合同、评审门禁与无自动投递。
 
 ## 核心功能
 
 | 页面 | 功能 |
 | --- | --- |
-导航用 Streamlit 原生多页（`st.navigation`）：**每页有真实 URL**，可刷新、可前进后退、可分享链接；侧边栏按分区显示。一共 10 页——刻意不超过 10，因为 Streamlit 侧边栏超过 10 个就会把剩下的折叠成「View more」。
+导航用 Streamlit 原生多页（`st.navigation`）：**每页有真实 URL**，可刷新、可前进后退、可分享链接；侧边栏按分区显示。当前一共 **12 个导航页**；如 Streamlit 版本折叠部分入口，各页仍可通过 URL 直接访问。
 
 | 分区 | 页面（URL） | 干什么 |
 | --- | --- | --- |
 | 主线 | 今天（行动 + 数据）`/` | 待投清单逐条推进；第二个页签是漏斗 / 趋势 / 岗位排名 / 日报——**统计口径只有这一处** |
-| 找工作 | 岗位库 `/jobs` · 匹配分析 `/match` · 简历 `/resume` · 投递台 `/apply` · 投递记录 `/records` | 一条链走完：多渠道搜岗 → 匹配 → 简历（内容 + 三套模板 + 照片 + ATS 覆盖检查）→ **唯一的话术生成入口**（批量 / 单条）→ 记录与跟进 |
-| 我的 | 自我蒸馏 `/distill` · 面试准备 `/interview` | 画像 → 面试拷问 → 分身陪练 → 复盘写回画像（一个闭环，同页三个页签） |
+| 找工作 | 岗位库 `/jobs` · 匹配分析 `/match` · 简历 `/resume` · 投递台 `/apply` · 投递记录 `/records` · Agent 流程 `/agent` | 一条链走完：多渠道搜岗 → 匹配 → 简历（内容 + 模板 + 照片 + ATS 覆盖检查）→ **唯一的话术生成入口**（批量 / 单条）→ 记录与跟进；Agent 页展示工具链与 trace |
+| 我的 | 数字分身 `/twin` · 自我蒸馏 `/distill` · 面试准备 `/interview` | 画像 → 数字分身 → 面试拷问 → 分身陪练 → 复盘写回画像 |
 | 对外 | 名片与分享 `/show` | 对外素材自检、公开名片链接（`?twin=1` 免密）、简历 PDF 导出 |
 | 其它 | 设置 `/settings` | API Key / 模型（默认 flash）/ 每日投递目标 / 每日调用限额 / 访问密码 / 主题 |
 
@@ -93,12 +96,12 @@ streamlit run offer_agent_app.py
 ## 测试（一键全跑）
 
 ```bash
-python run_tests.py            # 项目根目录：离线测试全跑（15+ 通过 / 0 失败基线）
-python run_tests.py --live     # 连 live/网络/API 类一起跑（真实调 API，费额度）
-python run_tests.py --browser  # 连浏览器验收类一起跑（需先本地起 app）
+python run_tests.py            # 项目根目录：跑默认离线回归；live/浏览器类单列
+python run_tests.py --live     # 追加 live/网络/API 类（真实调 API，费额度）
+python run_tests.py --browser  # 追加浏览器验收（需先本地起 app）
 ```
 
-覆盖：Agent 引擎回归（22 项）、全部页面 import 扫描（防云端 NameError）、密码门、链接检测、话术校验、简历 ATS、导航结构、云端启动模拟等 26 个测试文件。
+测试入口会明确区分通过、失败和跳过；不要把“未运行的 live/浏览器测试”写成通过。Agent 工具、页面导入、密码门、链接检测、话术校验、简历 ATS、导航结构与云端启动各有独立测试脚本。
 
 ## 文档
 
@@ -118,7 +121,7 @@ DEEPSEEK_API_KEY = "sk-你的key"
 APP_PASSWORD = "给工作台设的访问密码"
 ```
 
-4. Deploy → 2 分钟拿到公开链接（**在线地址：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app**）
+4. Deploy 后得到自己的公开链接。当前已部署入口（可用性随云端应用休眠/配额变化）：https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app
 5. 数字名片页：公开链接后加 `/?twin=1`（免密码，供 HR 访问）→ https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app/?twin=1
 
 > 依赖策略：`requirements.txt` 用 `>=` 下限（不锁死版本）——Streamlit Cloud 每次部署装最新已验证兼容版本，避免锁旧版踩依赖坑。
@@ -134,7 +137,8 @@ offeragent/
 ├── digital_twin.py         # 数字分身（自我介绍/反问/扮演我/复盘/岗位雷达/画像进化）
 ├── distill*.py             # 自我蒸馏（问答式/填表式）
 ├── jd_fetcher.py           # JD 抓取（直连优先，r.jina.ai 兜底）
-├── job_sources.py          # 岗位源（牛客/实习僧/BOSS，结构化解析 + 浏览器抓取）
+├── job_sources.py          # 岗位源（牛客/腾讯/网易/电鸭 + 海外 API/RSS + 浏览器抓取 BOSS/实习僧）
+├── twin_voice.py           # 数字分身朗读（浏览器 Web Speech，零密钥、文本不出本机）
 ├── job_quality.py          # 岗位质量检测
 ├── company_lookup.py       # 公司信息补全
 ├── resume_tailor.py        # ATS 简历覆盖检查
@@ -162,7 +166,7 @@ offeragent/
 
 ## 技术栈
 
-Python · Streamlit · DeepSeek API · requests · plotly · pypdf · python-docx · 纯本地数据（无外部数据库）
+Python · Streamlit · DeepSeek API · SQLite / Chroma · 可选 Java API（MySQL / Redis）· requests · plotly · pypdf · python-docx
 
 ## 分层架构（2026-09-29 重构）
 
@@ -175,7 +179,7 @@ Python · Streamlit · DeepSeek API · requests · plotly · pypdf · python-doc
 | ui_kit.py | 渲染层：页头/仪表盘/岗位档案/报告卡片/下一步提示 | streamlit + plotly |
 
 - 单一权威源：data/jds/*.meta.json 的 match_score/status 是唯一权威；agent_logs.jsonl 只记事件，历史分数是快照不覆盖岗位库。store.audit_scores() 一键对账，Web 端「数据与日志」页可看。
-- 投递防抖：已投岗位禁止重复投递；24 小时内投过也会被拦（store.check_apply_allowed）。
+- 投递防抖：已投岗位禁止重复投递；24 小时内投过也会被拦。跨来源/标题变体会按规范化 URL 或「公司+岗位+城市」指纹匹配历史记录，重筛后再入库也会自动标为已投（store.check_apply_allowed / apply_assist.find_duplicate_application）。
 
 ## 数据持久化（Streamlit Cloud 重启不丢数据）
 

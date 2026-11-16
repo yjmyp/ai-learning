@@ -11,6 +11,7 @@ import re
 import time
 from pathlib import Path
 
+import apply_assist
 import resume_clean
 
 try:
@@ -53,7 +54,8 @@ def load_my_resume() -> str:
     """读「我的简历」：优先读 简历/我的简历.md，没有就退回仓库里已有的简历。"""
     if MY_RESUME_PATH.exists():
         return resume_clean.clean(read_text(MY_RESUME_PATH))[0]
-    for cand in [BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习.md",
+    for cand in [BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发-2027校招.md",
+                 BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习.md",
                  BASE_DIR.parent / "简历" / "余剑-简历-AI应用开发实习-v2.md"]:
         if cand.exists():
             return resume_clean.clean(read_text(cand))[0]
@@ -149,8 +151,23 @@ def save_new_job(name: str, city: str, jd_text: str, source_url: str = "",
         meta["status"] = "待投"
         meta["excluded_reason"] = ""
         meta["excluded_evidence"] = ""
+    # 防重：同一个岗位换了来源/标题，文件名可能不同，但历史投递记录能认出来
+    dup = apply_assist.find_duplicate_application(name, meta)
+    if dup and meta.get("status") != "已投":
+        meta["status"] = "已投"
+        meta["applied_at"] = meta.get("applied_at") or dup.get("time", "")
+        meta["last_apply_time"] = meta.get("last_apply_time") or dup.get("time", "")
+        meta["duplicate_of"] = dup.get("job", "")
+        meta["duplicate_note"] = "与历史投递记录重复，已自动标记为已投"
+        reason = ""
     save_meta(name, meta)
-    return f"已保存：{name}（{'自动排除：' + reason if reason else '待投'}）"
+    if dup:
+        state = "识别为已投，跳过重复投递"
+    elif reason:
+        state = "自动排除：" + reason
+    else:
+        state = "待投"
+    return f"已保存：{name}（{state}）"
 
 
 # ============================================================
@@ -215,6 +232,11 @@ def check_apply_allowed(name: str, meta: dict) -> dict:
                         "reason": f"{name} 24 小时内已发起过投递（{t}），防重复连发"}
         except Exception:
             pass
+    dup = apply_assist.find_duplicate_application(name, meta)
+    if dup:
+        return {"allowed": False,
+                "reason": f"{name} 与已投记录「{dup.get('job', '')}」重复"
+                          f"（{dup.get('time', '')}），已拦截"}
     return {"allowed": True, "reason": ""}
 
 

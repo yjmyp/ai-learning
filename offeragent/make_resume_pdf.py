@@ -11,7 +11,7 @@ make_resume_pdf · 简历 HTML → PDF（支持多模板 + 自动嵌照片）
 说明：
   · 三种模板：classic（单栏）/ sidebar（左侧栏）/ compact（极简黑白）
   · 有 简历/照片.jpg（或 offeragent/assets/avatar.png）就自动嵌进照片位
-  · 生成的同名 PDF 会同时写一份「默认版」到 简历/余剑-简历-AI应用开发实习-v3.pdf，
+  · 生成的同名 PDF 会同时写一份「默认版」到 简历/余剑-简历-AI应用开发-2027校招.pdf，
     名片页的下载按钮就是取这份；--no-default 可以跳过
 """
 import argparse
@@ -33,7 +33,7 @@ except Exception:
 import browser_fetch as bf          # noqa: E402
 import resume_templates as rt       # noqa: E402
 
-DEFAULT_OUT = RESUME_DIR / "余剑-简历-AI应用开发实习-v3.pdf"
+DEFAULT_OUT = RESUME_DIR / "余剑-简历-AI应用开发-2027校招.pdf"
 
 
 def html_to_pdf(html: str, out: Path) -> int:
@@ -77,10 +77,19 @@ def main():
 
     html = rt.render_with_photo(args.template)
     out = Path(args.out) if args.out else RESUME_DIR / (
-        "余剑-简历-AI应用开发实习-v3.pdf" if args.template == "classic"
-        else f"余剑-简历-AI应用开发实习-v3-{args.template}.pdf")
+        DEFAULT_OUT.name if args.template == "classic"
+        else f"余剑-简历-AI应用开发-2027校招-{args.template}.pdf")
+
+    # 同一份内容同时产出可搜索 HTML 和纯文本 Markdown，避免 PDF 已更新、
+    # 仓库里的预览版却保留旧指标。三份文件必须来自同一次渲染。
+    html_out = out.with_suffix(".html")
+    md_out = out.with_suffix(".md")
+    html_out.write_text(html, encoding="utf-8")
+    md_out.write_text(rt.to_markdown(), encoding="utf-8")
+
     kb = html_to_pdf(html, out)
     print(f"✅ 已生成：{out}（{kb} KB）")
+    print(f"✅ 已同步：{html_out.name} / {md_out.name}")
 
     try:
         from pypdf import PdfReader

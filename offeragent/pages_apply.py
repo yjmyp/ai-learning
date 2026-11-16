@@ -41,7 +41,7 @@ def page_batch_apply(vkey: str = "boss"):
                "发送那一下永远留给你（自动群发会被平台风控封号）。")
     jobs = [j for j in list_jobs() if j[1]["status"] == "待投"]
     if not jobs:
-        st.info("当前没有待投岗位。去「找工作 → 岗位库」把岗位状态设为「待投」。")
+        empty_state("当前没有待投岗位", "去「岗位库」把岗位状态设为「待投」，这里就会出现待投清单。", icon="📭")
         return
     st.markdown(f"待投 **{len(jobs)}** 家　·　今日已投 **{apply_assist.applied_today()}** 家")
 
@@ -125,20 +125,21 @@ def distill_section():
 def page_apply_desk():
     """投递台：全应用唯一生成投递话术的地方（单条精修 / 批量一次到位）。"""
     hero("投递台", "话术、岗位链接、投递三件套一次备好；发送那一下由你自己按")
-    labels = [v[0] for v in TALK_VARIANTS.values()]
-    vlabel = st.segmented_control("话术场景", labels, default=labels[0],
-                                  key="desk_variant") or labels[0]
-    vkey = list(TALK_VARIANTS.keys())[labels.index(vlabel)]
-    mode = st.segmented_control(
-        "工作方式", ["🗂 批量（一次处理全部待投）", "✍️ 单条精修（一家一版）"],
-        default="🗂 批量（一次处理全部待投）", key="desk_mode") \
-        or "🗂 批量（一次处理全部待投）"
-    st.caption("批量：适合已经筛完、要一次性推进多家。"
+    with st.container(border=True, key="oa-card-apply-desk"):
+        labels = [v[0] for v in TALK_VARIANTS.values()]
+        vlabel = st.segmented_control("话术场景", labels, default=labels[0],
+                                      key="desk_variant") or labels[0]
+        vkey = list(TALK_VARIANTS.keys())[labels.index(vlabel)]
+        mode = st.segmented_control(
+            "工作方式", ["🗂 批量（一次处理全部待投）", "✍️ 单条精修（一家一版）"],
+            default="🗂 批量（一次处理全部待投）", key="desk_mode") \
+            or "🗂 批量（一次处理全部待投）"
+        st.caption("批量：适合已经筛完、要一次性推进多家。"
                "单条：适合重点公司，想逐句改。两者都只**生成**话术，发送永远由你按。")
-    if "单条" in mode:
-        page_talk(embedded=True, vkey=vkey)
-    else:
-        page_batch_apply(vkey=vkey)
+        if "单条" in mode:
+            page_talk(embedded=True, vkey=vkey)
+        else:
+            page_batch_apply(vkey=vkey)
 
 
 

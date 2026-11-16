@@ -46,16 +46,21 @@ def gate_verdict(score) -> str:
 # 1) 工具注册表（LangChain/OpenAI SDK 风格：统一 schema）
 # ============================================================
 class Tool:
-    def __init__(self, name, description, params, func, human_confirm=False):
+    def __init__(self, name, description, params, func, human_confirm=False,
+                 required_params=None):
         self.name = name            # 工具名（模型用这个调用）
         self.description = description  # 给模型看的说明（决定它会不会选这个工具）
         self.params = params        # {"参数名": "类型说明", ...}
         self.func = func            # 实际执行函数
         self.human_confirm = human_confirm  # True = 执行类动作，必须停在用户确认
+        # 默认所有参数必填；有默认值的参数可以显式标成可选
+        self.required_params = (list(required_params) if required_params is not None
+                                else list(params))
 
     def schema(self):
         return {"name": self.name, "description": self.description,
-                "params": self.params, "human_confirm": self.human_confirm}
+                "params": self.params, "required": self.required_params,
+                "human_confirm": self.human_confirm}
 
 
 def make_registry(tools: list) -> dict:
@@ -67,7 +72,8 @@ def _schemas(registry: dict) -> dict:
     """把注册表转成 safe_call 需要的参数合同格式。"""
     out = {}
     for t in registry.values():
-        out[t.name] = {"required": list(t.params), "types": {k: str for k in t.params}}
+        out[t.name] = {"required": list(t.required_params),
+                       "types": {k: str for k in t.params}}
     return out
 
 
@@ -211,6 +217,18 @@ def run_agent(task: str, registry: dict, state: AgentState = None,
         used = {t.get("tool") for t in state.trace}
         return [r for r in required_tools if r not in used]
 
+    def _as_final(reply: str):
+        """把一次模型回复当作最终答案处理；缺必需工具时打回继续。"""
+        missing = _missing_required()
+        if missing:
+            state.messages.append({"role": "assistant", "content": reply})
+            state.messages.append({"role": "user",
+                                   "content": f"任务要求必须调用工具 {missing}，但你直接总结了。请继续调用 {missing}，基于结果再给总结。"})
+            return None
+        state.messages.append({"role": "assistant", "content": reply})
+        state.memory.add_turn(task, reply)
+        return reply, state
+
     try:                                # 外部依赖异常兜底：不崩，返回部分完成状态
         for step in range(state.budget):
             reply, usage = call_llm(state.messages)
@@ -222,21 +240,28 @@ def run_agent(task: str, registry: dict, state: AgentState = None,
                                        "content": "你输出的 JSON 无法解析，请只输出一行合法 JSON：{\"tool\": \"工具名\", \"args\": {…}}"})
                 continue
             if not raw:                 # 模型直接回答
-                missing = _missing_required()
-                if missing:             # ⑤ 门禁强制闭环：缺必需工具不给总结
-                    state.messages.append({"role": "assistant", "content": reply})
-                    state.messages.append({"role": "user",
-                                           "content": f"任务要求必须调用工具 {missing}，但你直接总结了。请继续调用 {missing}，基于结果再给总结。"})
-                    continue
-                state.messages.append({"role": "assistant", "content": reply})
-                state.memory.add_turn(task, reply)
-                return reply, state
+                done = _as_final(reply)  # ⑤ 门禁强制闭环：缺必需工具不给总结
+                if done:
+                    return done
+                continue
 
             try:
                 action = json.loads(raw)
             except json.JSONDecodeError:    # ① 非法 JSON
                 state.messages.append({"role": "assistant", "content": reply})
                 state.messages.append({"role": "user", "content": "你输出的 JSON 无法解析，请只输出一行合法 JSON：{\"tool\": \"工具名\", \"args\": {…}}"})
+                continue
+
+            if not isinstance(action, dict) or "tool" not in action:
+                # extract_json 会把正文里引用的 JSON（如工具返回示例）抠出来，
+                # 那不是工具调用；整段是 JSON 才当坏调用处理。
+                if reply.lstrip().startswith("{") or '"tool"' in reply[:30]:
+                    state.messages.append({"role": "assistant", "content": reply})
+                    state.messages.append({"role": "user", "content": "你输出的 JSON 缺少 tool 字段，请只输出一行合法 JSON：{\"tool\": \"工具名\", \"args\": {…}}"})
+                    continue
+                done = _as_final(reply)
+                if done:
+                    return done
                 continue
 
             tool = registry.get(action.get("tool"))
@@ -260,6 +285,9 @@ def run_agent(task: str, registry: dict, state: AgentState = None,
                                 "result": resp.get("result") or resp.get("error"),
                                 "tokens": usage})   # ④ 成本可观测：每步 token 落盘
             if not resp["ok"]:              # 坏调用 → 结构化错误回填重试
+                state.trace.append({"step": step, "tool": tool.name, "args": args,
+                                    "ok": False, "error": resp["error"],
+                                    "tokens": usage})
                 state.messages.append({"role": "assistant", "content": reply})
                 state.messages.append({"role": "user", "content": f"工具调用失败：{resp['error']}，请修正后重试"})
                 continue
@@ -358,7 +386,7 @@ def save_agent_log(job_name: str, company: str, state: AgentState, final: str,
 
 def _slim_trace(trace: list) -> list:
     """落盘前截断 trace 里的敏感大字段（JD / 画像 / 话术全文），防隐私泄露 + 控制体积。"""
-    BIG = ("jd_text", "profile", "text", "talk")
+    BIG = ("jd_text", "profile", "text", "talk", "task")
     out = []
     for t in trace:
         args = t.get("args")

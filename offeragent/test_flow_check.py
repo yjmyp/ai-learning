@@ -26,11 +26,30 @@ def main():
     cdp.call("Page.enable")
     time.sleep(11)
 
-    def page_text():
+    def _snapshot():
         html = cdp.call("Runtime.evaluate", {
             "expression": "document.documentElement.outerHTML",
             "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
         return html_to_text(html)
+
+    def wait_stable(min_secs=8.0, max_secs=45.0):
+        """等渲染稳定再取文本：连续两次快照一致 + 至少跑满 min_secs。
+
+        原来写死 sleep(7)：/interview 这类三个页签的页偶尔 7 秒没渲染完 →
+        取到半页 → "这轮过、下轮不过"的假失败。改成轮询到稳定为止。
+        """
+        started = time.time()
+        prev, txt = None, ""
+        while time.time() - started < max_secs:
+            time.sleep(2.5)
+            txt = _snapshot()
+            if prev == txt and len(txt) > 600 and time.time() - started >= min_secs:
+                break
+            prev = txt
+        return txt
+
+    def page_text():
+        return _snapshot()
 
     def click_nav(label):
         js = ("(function(){var ls=[].slice.call(document.querySelectorAll('label'));"
@@ -39,12 +58,12 @@ def main():
               "if(!el) return 'not-found'; el.click(); return 'clicked';})()")
         r = cdp.call("Runtime.evaluate", {"expression": js, "returnByValue": True},
                      timeout=40).get("result", {}).get("value")
-        time.sleep(7)
+        wait_stable()
         return r
 
     def goto(path):
         cdp.call("Page.navigate", {"url": "http://localhost:8501" + path}, timeout=60)
-        time.sleep(7)
+        wait_stable()
 
     def current_path():
         return cdp.call("Runtime.evaluate",
@@ -57,7 +76,7 @@ def main():
               "if(!el) return 'not-found'; el.click(); return 'clicked';})()")
         r = cdp.call("Runtime.evaluate", {"expression": js, "returnByValue": True},
                      timeout=40).get("result", {}).get("value")
-        time.sleep(7)
+        wait_stable()
         return r
 
     checks = []

@@ -37,6 +37,13 @@ ERR_KWS = ["Traceback", "StreamlitDuplicateElementId", "KeyError",
 
 def stage(tmp: Path):
     """只复制代码，不复制 data/（模拟云端仓库内容）。"""
+    def skip_private(directory, names):
+        """递归复制时仍要排除密钥、缓存和本地生成文件。"""
+        return {
+            name for name in names
+            if name in ("secrets.toml", "__pycache__") or name.endswith(".pyc")
+        }
+
     for p in HERE.iterdir():
         if p.name in ("data", "__pycache__", ".git"):
             continue
@@ -52,6 +59,13 @@ def stage(tmp: Path):
             for f in p.iterdir():
                 if f.is_file() and f.name not in ("secrets.toml",):
                     shutil.copy2(f, dst / f.name)
+        # 原实现只复制一级目录里的文件，会漏掉 static/voice_input 这类嵌套
+        # 自定义组件，导致“空数据首次启动”被误报成产品故障。这里对运行所需
+        # 的静态目录做递归复制，同时排除密钥和缓存。
+        if p.is_dir() and p.name in ("static", "assets"):
+            shutil.copytree(
+                p, tmp / p.name, dirs_exist_ok=True, ignore=skip_private
+            )
     (tmp / "data").mkdir(exist_ok=True)
 
 

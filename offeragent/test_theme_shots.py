@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-给 B / C 两套主题各截几张图，方便对比。
+给 Pro 主题（唯一设计语言）截图，供人工核对与 README 配图。
 
 跑法：python offeragent\test_theme_shots.py
-输出：offeragent/data/shots/theme{B,C}_*.png
+输出：offeragent/data/shots/themeP_*.png
 注意：会临时改 data/config.json 的 theme 字段，跑完恢复原值。
 """
 import base64
@@ -20,7 +20,7 @@ from job_sources import html_to_text  # noqa: E402
 CFG = HERE / "data" / "config.json"
 SHOTS = HERE / "data" / "shots"
 PAGES = ["今日", "岗位"]
-THEMES = [("B Linear（深色紧凑）", "B"), ("C Stripe（浅色宽松）", "C")]
+THEMES = [("P 产品级（浅色）", "P")]
 ERR = ["Traceback", "StreamlitDuplicateElementId", "KeyError", "NameError", "TypeError"]
 
 

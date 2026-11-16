@@ -93,6 +93,7 @@ from pages_resume import *
 from pages_agent import *
 from pages_apply import *
 from pages_twin import *
+from pages_home_pro import page_home_pro   # 产品级首页（唯一设计语言）
 
 # ============================================================
 # 分层重构（2026-09-29）：数据层 store / AI 层 llm / 渲染层 ui_kit
@@ -119,10 +120,10 @@ if os.environ.get("GITHUB_PAT") and not (DATA_DIR / "jds").exists():
 # 页面：今日行动（行动导向首屏）
 # ============================================================
 def page_today_hub():
-    """今天：要做什么 + 做得怎么样。统计放进同一页的第二个页签，口径只有这一处。"""
-    t1, t2, t3 = st.tabs(["行动清单", "数据与日志", "Agent 运行记录"])
+    """今天：产品级首页（pages_home_pro）+ 数据与日志 + Agent 运行记录。口径只有一处。"""
+    t1, t2, t3 = st.tabs(["首页", "数据与日志", "Agent 运行记录"])
     with t1:
-        page_today()
+        page_home_pro()
     with t2:
         page_data_log()
     with t3:
@@ -144,8 +145,7 @@ def page_interview():
 def build_pages():
     """注册所有页面（侧边栏按分区显示）。返回 dict 给 st.navigation。
 
-    注意：Streamlit 侧边栏最多直接显示 10 个页面，多的会被折叠成「View more」。
-    核心 10 页 + 第 11 页「Agent 流程」（引擎接入）——折叠进 View more 不影响使用。
+    当前共 12 个页面；如 Streamlit 版本折叠超出部分，各页仍保留真实 URL。
     """
     profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
     spec = [
@@ -161,6 +161,7 @@ def build_pages():
             ("agent", "Agent 流程（引擎演示）", "🤖", page_agent, False),
         ]),
         ("我的", [
+            ("twin", "数字分身", "🧑‍💻", page_twin_digital, False),
             ("distill", "自我蒸馏", "🧬", distill_section, False),
             ("interview", "面试准备（拷问 / 陪练 / 复盘）", "🎤", page_interview, False),
         ]),
@@ -302,18 +303,22 @@ def main():
     inject_css(theme_now)
     ensure_dirs()
 
+    with st.sidebar:
+        st.markdown(
+            '<div class="oa-brand">'
+            '<div class="oa-brand-mark">OA</div>'
+            '<div class="oa-brand-txt">'
+            '<div class="oa-brand-name">OfferAgent</div>'
+            '<div class="oa-brand-sub">Career Copilot</div>'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
     # 原生多页导航：侧边栏自动生成「分区 + 页」两级结构，每页有真实 URL
     pg = st.navigation(build_pages(), position="sidebar")
 
     with st.sidebar:
         st.divider()
-        picked_theme = st.selectbox("界面风格（可切换对比）", theme_names,
-                                    index=theme_names.index(theme_now),
-                                    key="theme_pick")
-        if picked_theme != theme_now:
-            _cfg["theme"] = picked_theme
-            write_text(CONFIG_PATH, json.dumps(_cfg, ensure_ascii=False, indent=2))
-            st.rerun()
         jobs_all = list_jobs()
         pending_n = sum(1 for _, m, _ in jobs_all if m["status"] == "待投")
         applied_n = sum(1 for _, m, _ in jobs_all if m["status"] == "已投")

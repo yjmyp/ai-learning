@@ -24,7 +24,7 @@ import re
 import time
 import hashlib
 import threading
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait, as_completed
 from pathlib import Path
 from urllib.parse import quote
 
@@ -60,7 +60,7 @@ BOSS_CITY_CODES = {
 # 来源清单。分两类：
 #   NO_LOGIN_SOURCES：公开接口/网页，**不用登录**，云端也能用（默认就搜这些）
 #   其余：实习僧要本机浏览器渲染、BOSS 要本机登录态 —— 云端用不了，按需勾选
-SOURCES = ["牛客", "腾讯招聘", "网易招聘", "Remotive(远程)",
+SOURCES = ["牛客", "腾讯招聘", "网易招聘", "电鸭社区(远程)", "Remotive(远程)",
            "RemoteOK(远程)", "Arbeitnow(海外)", "WeWorkRemotely(远程)",
            "HN Who's Hiring(海外)", "Greenhouse-AI公司(海外)",
            "实习僧", "BOSS直聘"]
@@ -730,6 +730,7 @@ def sleep_between_pages(seconds: float = 0.25):
 SEARCH_WORKERS = 3          # 单个站点的并发路数上限（不是越多越好，3 路足够且礼貌）
 SOURCE_WORKERS = 3          # 一次搜索里同时抓几个"来源"（每个来源内部再各自并发翻页）
 PAGE_MIN_INTERVAL = 0.25    # 同一站点两次请求的最小间隔（秒）
+HTTP_TIMEOUT = 12           # 国内来源单次请求上限（秒）。以前 25s，一个卡住的页能把整次搜索拖到 20s+
 
 _PAGE_LOCK = threading.Lock()
 _LAST_HIT = {}              # {站点名: 上次发请求的时间戳}
@@ -753,7 +754,7 @@ def _throttle(key: str, min_interval: float = PAGE_MIN_INTERVAL):
         time.sleep(min(wait, 0.2))
 
 
-GLOBAL_INFLIGHT = 3     # 同时在飞的网络请求总数上限（不管勾了几个来源、每源翻几页）
+GLOBAL_INFLIGHT = 6     # 同时在飞的网络请求总数上限（不管勾了几个来源、每源翻几页）
 _INFLIGHT = threading.BoundedSemaphore(GLOBAL_INFLIGHT)
 # 同一时刻只允许一次搜岗（见 search_all 的说明：Streamlit 重跑不会杀掉旧线程）
 _SEARCH_LOCK = threading.Lock()
@@ -863,7 +864,7 @@ def search_tencent(keyword: str = "", city: str = "", diag: dict = None,
     def fetch(p):
         try:
             with _NetSlot():        # 占一个全局在飞名额
-                d = requests.get(TENCENT_API, headers=H, timeout=25, params={
+                d = requests.get(TENCENT_API, headers=H, timeout=HTTP_TIMEOUT, params={
                     "keyword": kw, "pageIndex": p, "pageSize": per_page,
                     "language": "zh-cn"}).json()
             return "ok", ((d.get("Data") or {}).get("Posts") or [])
@@ -920,7 +921,7 @@ def search_netease(keyword: str = "", city: str = "", diag: dict = None,
         try:
             with _NetSlot():        # 占一个全局在飞名额
                 d = requests.post(NETEASE_API, headers={**H, "Content-Type": "application/json"},
-                                  timeout=25, json={"currentPage": p, "pageSize": per_page,
+                                  timeout=HTTP_TIMEOUT, json={"currentPage": p, "pageSize": per_page,
                                                     "keyword": kw}).json()
             dd = d.get("data") or {}
             return "ok", (dd.get("list") or []), (dd.get("total") or dd.get("totalCount"))
@@ -1006,6 +1007,7 @@ def search_remotive(keyword: str = "", city: str = "", diag: dict = None,
 REMOTEOK_API = "https://remoteok.com/api"
 ARBEITNOW_API = "https://www.arbeitnow.com/api/job-board-api"
 WWR_RSS = "https://weworkremotely.com/categories/remote-programming-jobs.rss"
+ELEDUCK_API = "https://svc.eleduck.com/api/v1/posts"
 HN_ALGOLIA = "https://hn.algolia.com/api/v1"
 GREENHOUSE_API = "https://boards-api.greenhouse.io/v1/boards/%s/jobs"
 
@@ -1119,6 +1121,61 @@ def search_wwr(keyword: str = "", city: str = "", diag: dict = None,
     if diag is not None:
         diag.update({"raw": len(items), "kept": len(jobs), "cities": wants,
                      "source_api": "官方 RSS", "note": "远程编程岗，英文"})
+    return jobs
+
+
+def search_eleduck(keyword: str = "", city: str = "", diag: dict = None,
+                   limit: int = 200) -> list:
+    """电鸭社区「社区帖子招聘」公开 JSON（中文，远程/兼职为主，免登录）。
+
+    这个接口的 keyword 参数不生效，所以按页拉回来后本地过滤；标题里通常带岗位名
+    和薪资，标签里带「全职远程 / 城市 / 技术栈」。一页 25 条，按需要最多翻 24 页。
+    """
+    import math
+    kws, wants = split_terms(keyword), want_cities(city)
+    jobs, raw_n, pages_seen = [], 0, 0
+    page, total_pages = 1, 1
+    max_pages = min(24, max(6, int(math.ceil(max(limit, 25) / 25))))
+    while page <= min(total_pages, max_pages):
+        try:
+            data = fetch_json_or_text(
+                f"{ELEDUCK_API}?category=5&page={page}", timeout=15).json()
+        except Exception as e:
+            if diag is not None and not jobs:
+                diag["api_error"] = f"{type(e).__name__}:{str(e)[:60]}"
+            break
+        posts = data.get("posts") or []
+        if not posts:
+            break
+        pages_seen += 1
+        total_pages = int((data.get("pager") or {}).get("total_pages") or total_pages)
+        for p in posts:
+            if p.get("deleted") or p.get("closed"):
+                continue
+            title = (p.get("full_title") or p.get("title") or "").strip()
+            summary = (p.get("summary") or "").strip()
+            tags = " ".join((t or {}).get("name", "") for t in (p.get("tags") or []))
+            blob = f"{title} {summary} {tags}"
+            raw_n += 1
+            if kws and not any(k.lower() in blob.lower() for k in kws):
+                continue
+            city_label = "远程" if ("远程" in tags or "远程" in title) else "未知"
+            m = re.search(r"(\d+(?:\.\d+)?\s*[kK]\s*[-~]\s*\d+(?:\.\d+)?\s*[kK])", title)
+            salary = m.group(1).replace(" ", "") if m else ""
+            jobs.append(_pack(title, "", city_label, salary,
+                              f"https://eleduck.com/posts/{p.get('id')}",
+                              "电鸭社区(远程)", extra=tags[:80], jd=summary[:4000],
+                              hits=_kw_hits(blob, kws),
+                              ch=city_hit(city_label, wants)))
+            if len(jobs) >= limit:
+                break
+        if len(jobs) >= limit:
+            break
+        page += 1
+    if diag is not None:
+        diag.update({"raw": raw_n, "kept": len(jobs), "cities": wants,
+                     "pages": pages_seen, "source_api": "公开 JSON",
+                     "note": "中文远程/兼职岗，关键词本地过滤"})
     return jobs
 
 
@@ -1499,6 +1556,8 @@ def search(source: str, keyword: str, city: str = "", ask_model=None,
         return search_tencent(keyword, city, diag=diag, max_items=max_items)
     if source == "网易招聘":
         return search_netease(keyword, city, diag=diag, max_items=max_items)
+    if source == "电鸭社区(远程)":
+        return search_eleduck(keyword, city, diag=diag, limit=max_items)
     if source == "Remotive(远程)":
         return search_remotive(keyword, city, diag=diag, limit=max_items)
     if source == "RemoteOK(远程)":
@@ -1519,15 +1578,15 @@ def search(source: str, keyword: str, city: str = "", ask_model=None,
 
 
 # ============================================================
-# 4.5) 搜索结果缓存（同一「来源 + 关键词 + 城市 + 每源上限」10 分钟内直接复用）
+# 4.5) 搜索结果缓存（同一「来源 + 关键词 + 城市 + 每源上限」30 分钟内直接复用）
 # ============================================================
 # 为什么要缓存：抓一次多平台要十几到二十几秒，几乎全是网络等待。用户在界面上
 # 反复点「搜岗」（想换个关键词试试、或者手滑点了两次）时，完全没必要把同一批
-# 请求再打一遍——对站点也是负担。所以按这个四元组存**原始来源结果**，默认 10 分钟。
+# 请求再打一遍——对站点也是负担。所以按这个四元组存**原始来源结果**，默认 30 分钟。
 #
 # 只缓存「来源返回的原始结果」：城市过滤、合并去重仍然在缓存之后做，
 # 所以同一份缓存配上 strict_city 开关的不同取值也都是对的。
-CACHE_TTL = 600                # 秒。10 分钟内重复搜同一条件 = 秒回
+CACHE_TTL = 1800               # 秒。30 分钟内重复搜同一条件 = 秒回（实习岗变动没那么快）
 CACHE_MAX_ENTRIES = 60         # 最多留多少条，超了删最旧的（防缓存文件无限长大）
 CACHE_ENABLED = True           # 测试里会关掉，避免假数据落进真缓存
 CACHE_PATH = Path(__file__).resolve().parent / "data" / "search_cache.json"
@@ -1696,6 +1755,77 @@ def load_last_search(ttl: int = LAST_SEARCH_TTL) -> dict:
     return data
 
 
+PARTIAL_TTL = 300               # 秒。进行中的结果只用于本次搜索展示，5 分钟后不再兜底
+PARTIAL_PATH = Path(__file__).resolve().parent / "data" / "search_partial.json"
+_PARTIAL_LOCK = threading.Lock()
+
+
+def partial_path() -> Path:
+    """进行中快照的位置。环境变量 JOBS_PARTIAL 可覆盖（测试/多实例用）。"""
+    env = os.environ.get("JOBS_PARTIAL", "").strip()
+    return Path(env) if env else PARTIAL_PATH
+
+
+def save_partial(res: dict, keyword: str = "", city: str = "",
+                 done: int = 0, total: int = 0, elapsed: float = 0.0) -> bool:
+    """每抓完一个来源就写一次"已拿到的部分结果"，让首屏不用等所有平台。
+
+    与 save_last_search 一样：纯文件 I/O、绝不抛异常，坏了不影响搜岗本身。
+    """
+    try:
+        snap = {
+            "t": time.time(), "keyword": keyword or "", "city": city or "",
+            "done": int(done), "total": int(total), "elapsed": float(elapsed),
+            "merged": res.get("jobs") or [],
+            "by_source": res.get("by_source") or {},
+            "errors": res.get("errors") or {},
+            "diag": res.get("diag") or {},
+            "cities": res.get("cities") or {},
+            "city_miss": res.get("city_miss") or {},
+            "relaxed_all": bool(res.get("relaxed_all")),
+            "wants": res.get("wants") or [],
+            "cache_hits": int(res.get("cache_hits") or 0),
+        }
+        p = partial_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with _PARTIAL_LOCK:
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, p)
+        return True
+    except Exception as e:          # noqa: BLE001
+        _dbg(f"写进行中快照失败（忽略）：{type(e).__name__}")
+        return False
+
+
+def load_partial(ttl: int = PARTIAL_TTL) -> dict:
+    """读进行中快照；没有/过期/坏了返回 {}。"""
+    try:
+        data = json.loads(partial_path().read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict) or not isinstance(data.get("merged"), list):
+        return {}
+    try:
+        age = time.time() - float(data.get("t") or 0)
+    except Exception:
+        return {}
+    if age < 0 or age > ttl:
+        return {}
+    data["age_s"] = int(age)
+    return data
+
+
+def clear_partial():
+    """清掉上一次搜索留下的进行中快照（新一次搜索开始时调用）。"""
+    try:
+        p = partial_path()
+        if p.exists():
+            p.unlink()
+    except Exception:
+        pass
+
+
 def search_in_flight() -> bool:
     """此刻是不是有一次搜岗正在跑（同一进程里那道闸被占着）。
 
@@ -1711,6 +1841,35 @@ def search_in_flight() -> bool:
 # 5) 多平台合并搜岗
 # ============================================================
 ALL_SOURCES = "全部平台（合并去重）"
+
+
+
+def relevance_score(job: dict, keywords: list) -> float:
+    """岗位和搜索关键词的相关度（越大越相关，纯本地规则，不用模型）。
+
+    关键词在岗位名命中权重最高，命中越多越靠前。有明确薪资的加一点。"""
+    if not keywords:
+        return 0.0
+    text_fields = [
+        (job.get("title") or job.get("name") or "", 10),
+        (job.get("subtitle") or "", 3),
+        (job.get("jd") or "", 1),
+        (job.get("tags") or "", 2),
+        (" ".join(job.get("skills", []) or []), 5),
+        (job.get("company") or "", 0.3),
+    ]
+    score = 0.0
+    for kw in keywords:
+        kw_l = (kw or "").lower()
+        if not kw_l:
+            continue
+        for text, weight in text_fields:
+            if kw_l in str(text).lower():
+                score += weight
+                break
+    if job.get("salary"):
+        score += 0.5
+    return round(score, 3)
 
 
 def dedup_key(job: dict) -> str:
@@ -1777,6 +1936,7 @@ def search_all(keyword: str, city: str = "", ask_model=None,
             "上一次搜岗还没跑完（请求已经发出去了），等结果出来再点。"
             "连着点两次会让同一批请求排队跑两遍，只会更慢。")
     _t0 = time.perf_counter()
+    clear_partial()          # 清掉上一次的"进行中"快照，避免新搜索显示旧结果
     _dbg("搜岗开始：关键词=%r 城市=%r 来源=%s 上限=%s" % (keyword, city, sources, max_per_source))
     try:
         res = _search_all_impl(keyword, city, ask_model, sources, strict_city,
@@ -1785,6 +1945,7 @@ def search_all(keyword: str, city: str = "", ask_model=None,
         # （用户动一下控件就重跑），快照写下去了，结果就丢不了。
         save_last_search(res, keyword, city, sources, strict_city,
                          max_per_source, time.perf_counter() - _t0)
+        clear_partial()      # 完整结果已经落盘，进行中快照没用了
         _dbg("搜岗结束：%.1fs，合并 %d 条 %s" % (time.perf_counter() - _t0,
                                                len(res.get("jobs") or []), res.get("by_source")))
         return res
@@ -1798,7 +1959,7 @@ def _search_all_impl(keyword: str, city: str = "", ask_model=None,
                      use_cache: bool = True) -> dict:
     """一次搜索，把多个平台的结果合并去重。
 
-    use_cache=True 时：同一「来源+关键词+城市+每源上限」10 分钟内直接复用上次结果
+    use_cache=True 时：同一「来源+关键词+城市+每源上限」30 分钟内直接复用上次结果
     （抓一次十几秒，全是网络等待；重复搜同一条件是纯浪费）。每个来源的命不命中
     都写进 diag[来源]["cache"]，界面上能看到。
 
@@ -1826,6 +1987,8 @@ def _search_all_impl(keyword: str, city: str = "", ask_model=None,
         targets = list(sources)
     else:   # 默认只用免登录来源（云端可用）；实习僧在本机有浏览器时自动加上
         targets = list(NO_LOGIN_SOURCES)
+        if "远程" in wants:          # 选了远程就顺带搜中文远程社区，不用手动勾
+            targets.append("电鸭社区(远程)")
         try:
             import browser_fetch as bf
             if bf.desktop_available()[0]:
@@ -1885,50 +2048,92 @@ def _search_all_impl(keyword: str, city: str = "", ask_model=None,
             return [], d, str(e)[:200]
 
     # ---- 抓取：纯 HTTP 的来源并发跑；要浏览器/大模型的留在主线程串行 ----
-    fetched = {}
+    # 每完成一个来源就**立刻合并并写一次进行中快照**。以前用 ex.map 等所有来源
+    # 都结束才合并，首屏耗时 = 最慢那个站；现在第一个站好了就能先看到结果。
     safe = [t for t in tasks if _parallel_safe(t)]
     slow = [t for t in tasks if not _parallel_safe(t)]
-    _dbg("开始抓取：并发 %d 个纯 HTTP 来源 %s；串行 %s" % (len(safe), safe, slow))
-    if len(safe) > 1:
-        with ThreadPoolExecutor(max_workers=min(SOURCE_WORKERS, len(safe))) as ex:
-            for task, got in zip(safe, ex.map(fetch_task, safe)):   # map 保序
-                fetched[task[0]] = got
-    else:
-        for t in safe:
-            fetched[t[0]] = fetch_task(t)
-    for t in slow:
-        fetched[t[0]] = fetch_task(t)
+    kw_list = split_terms(keyword)
+    total_tasks = len(tasks)
+    src_order = {src: i for i, (src, _u) in enumerate(tasks)}
+    job_order = {}          # id(job) -> 来源顺序，用于相关度相同时保持原平台顺序
+    done_tasks = [0]
+    _impl_t0 = time.perf_counter()
 
-    for src, _custom_url in tasks:        # 仍按原顺序合并，输出顺序与串行时完全一致
-        rows, d, err = fetched.get(src, ([], {}, "内部错误：这个来源没抓到结果"))
+    def rank_jobs():
+        # 先按来源顺序排（稳定排序），再按相关度排：相关度相同的岗位仍按平台顺序，
+        # 结果不随"哪个站先返回"而抖动。
+        merged.sort(key=lambda j: job_order.get(id(j), 999))
+        for j in merged:
+            j["relevance"] = relevance_score(j, kw_list)
+        merged.sort(key=lambda j: (j.get("relevance", 0), bool(j.get("salary"))),
+                    reverse=True)
+
+    def snapshot():
+        """把"目前已经拿到的结果"落盘，供页面在搜索途中读出来先显示。"""
+        now = time.perf_counter()
+        rank_jobs()
+        save_partial({
+            "jobs": merged, "by_source": by_source, "errors": errors,
+            "diag": diag, "cities": city_stats, "city_miss": city_miss,
+            "relaxed_all": False, "wants": wants,
+            "cache_hits": sum(1 for _s, _d in diag.items()
+                              if isinstance(_d, dict)
+                              and str(_d.get("cache", "")).startswith("命中缓存")),
+        }, keyword, city, done_tasks[0], total_tasks, now - _impl_t0)
+
+    def absorb(task, got):
+        """合并一个来源的结果（在主线程调用，所以对 merged/seen 的修改是安全的）。"""
+        src, _custom_url = task
+        rows, d, err = got if got else ([], {}, "内部错误：这个来源没抓到结果")
         raw_by_src[src] = list(rows)
         if err:
             by_source[src] = 0
             errors[src] = err
             diag[src] = d
-            continue
-        # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
-        counter = {}
-        for j in rows:
-            c = (j.get("city") or "未标注").strip() or "未标注"
-            counter[c] = counter.get(c, 0) + 1
-        city_stats[src] = sorted(counter.items(), key=lambda x: -x[1])[:6]
-        # 严格城市过滤：不匹配就**整条丢掉**（宁缺毋滥，用户要的是"城市对得上"）
-        if strict_city and wants:
-            keep = [j for j in rows if city_hit(j.get("city"), wants)]
-            relaxed[src] = len(rows) - len(keep)
-            if not keep and rows:
-                city_miss[src] = len(rows)          # 这个平台这次没有目标城市的岗位
-            rows = keep
-        by_source[src] = len(rows)
-        diag[src] = d
-        for j in rows:
-            # 去重键见 dedup_key()：岗位名 + 公司，公司名拿不到时退回 URL
-            key = dedup_key(j)
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(j)
+        else:
+            # 城市分布：让用户看到"这个平台捞回来的都是哪些城市"
+            counter = {}
+            for j in rows:
+                c = (j.get("city") or "未标注").strip() or "未标注"
+                counter[c] = counter.get(c, 0) + 1
+            city_stats[src] = sorted(counter.items(), key=lambda x: -x[1])[:6]
+            # 严格城市过滤：不匹配就**整条丢掉**（宁缺毋滥，用户要的是"城市对得上"）
+            if strict_city and wants:
+                keep = [j for j in rows if city_hit(j.get("city"), wants)]
+                relaxed[src] = len(rows) - len(keep)
+                if not keep and rows:
+                    city_miss[src] = len(rows)      # 这个平台这次没有目标城市的岗位
+                rows = keep
+            by_source[src] = len(rows)
+            diag[src] = d
+            for j in rows:
+                # 去重键见 dedup_key()：岗位名 + 公司，公司名拿不到时退回 URL
+                key = dedup_key(j)
+                if key in seen:
+                    continue
+                seen.add(key)
+                job_order[id(j)] = src_order.get(src, 999)
+                merged.append(j)
+        done_tasks[0] += 1
+        snapshot()
+
+    _dbg("开始抓取：并发 %d 个纯 HTTP 来源 %s；串行 %s" % (len(safe), safe, slow))
+    if len(safe) > 1:
+        with ThreadPoolExecutor(max_workers=min(SOURCE_WORKERS, len(safe))) as ex:
+            futures = {ex.submit(fetch_task, t): t for t in safe}
+            for fut in as_completed(futures):
+                task = futures[fut]
+                try:
+                    got = fut.result()
+                except Exception as e:      # fetch_task 自己会吞异常，这里只兜底
+                    got = ([], {}, str(e)[:200])
+                absorb(task, got)
+    else:
+        for t in safe:
+            absorb(t, fetch_task(t))
+    for t in slow:
+        absorb(t, fetch_task(t))
+    snapshot()
 
     # 城市不是必填；给了城市就把明显不含该城市的排后面，但不丢弃
     if wants:
@@ -1950,6 +2155,13 @@ def _search_all_impl(keyword: str, city: str = "", ask_model=None,
     cache_hits = sum(1 for _s, _d in diag.items()
                      if isinstance(_d, dict)
                      and str(_d.get("cache", "")).startswith("命中缓存"))
+    # 按相关度排序：关键词命中越多越靠前；相关度相同时有薪资的优先
+    kw_list = split_terms(keyword)
+    for j in merged:
+        j["relevance"] = relevance_score(j, kw_list)
+    merged.sort(key=lambda j: (j.get("relevance", 0), bool(j.get("salary"))),
+                 reverse=True)
+
     return {"jobs": merged, "by_source": by_source, "errors": errors,
             "diag": diag, "cities": city_stats, "relaxed": relaxed,
             "city_miss": city_miss, "relaxed_all": relaxed_all,

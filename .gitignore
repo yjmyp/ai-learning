@@ -91,3 +91,8 @@ agent_resume.py
 .tmp_remote/
 
 interview-prep/
+
+# OfferAgent 桌面打包产物（体积大，不入库）
+offeragent/desktop/dist/
+offeragent/desktop/build/
+offeragent/desktop/*.spec.bak

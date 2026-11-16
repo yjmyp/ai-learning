@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { height: 46px; overflow: hidden; }
+  body { margin: 0; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: #334155; background: transparent; }
+  .row { display: flex; align-items: center; gap: 9px; padding: 2px 0; }
+  button {
+    border: 1px solid #cbd5e1; background: #fff; border-radius: 9px;
+    padding: 6px 11px; font-size: 12.5px; cursor: pointer; color: #0f172a;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  button:hover { border-color: #94a3b8; }
+  button.rec { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+  #dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+  button.rec #dot { background: #ef4444; animation: pulse .8s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  #status { color: #64748b; font-size: 12px; }
+  #transcript { color: #0f172a; font-size: 12.5px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="row">
+  <button id="mic"><span id="dot"></span><span id="label">按住说话 / 点一下开始</span></button>
+  <span id="status"></span>
+  <span id="transcript"></span>
+</div>
+<script>
+  const mic = document.getElementById("mic");
+  const label = document.getElementById("label");
+  const status = document.getElementById("status");
+  const transcript = document.getElementById("transcript");
+
+  let recognition = null;
+  let recording = false;
+  let finalText = "";
+
+  function post(type, extra) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, extra || {}), "*");
+  }
+  function setValue(value) {
+    post("streamlit:setComponentValue", { value: value, dataType: "json" });
+  }
+  window.__oaSetComponentValue = setValue;   // 便于自动化巡检模拟一次识别结果
+  function setHeight() {
+    // 固定高度：不能用 scrollHeight。iframe 会被列高拉伸，回传 scrollHeight 会形成
+    // “页面变高 → iframe 变高 → 回传更大高度”的反馈循环（实测把页面撑到 4 万 px）。
+    post("streamlit:setFrameHeight", { height: 46 });
+  }
+
+  function pickRecognition() {
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) return null;
+    const r = new Ctor();
+    r.lang = "zh-CN";
+    r.interimResults = true;
+    r.continuous = false;
+    r.maxAlternatives = 1;
+    return r;
+  }
+
+  function start() {
+    if (recording) { stop(); return; }
+    recognition = pickRecognition();
+    if (!recognition) {
+      status.textContent = "当前浏览器不支持语音识别（建议 Edge / Chrome）";
+      return;
+    }
+    finalText = "";
+    transcript.textContent = "";
+    status.textContent = "正在听…";
+    mic.classList.add("rec");
+    label.textContent = "点击结束";
+    recording = true;
+    recognition.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t; else interim += t;
+      }
+      transcript.textContent = (finalText + interim).slice(0, 80);
+      if (interim) status.textContent = "正在听…";
+    };
+    recognition.onerror = (e) => {
+      status.textContent = "识别失败：" + (e.error || "unknown");
+      reset();
+    };
+    recognition.onend = () => {
+      reset();
+      const text = finalText.trim();
+      if (text) {
+        status.textContent = "已识别，正在提问…";
+        setValue({ text: text, ts: Date.now() });
+      } else {
+        status.textContent = "没听清，再试一次";
+      }
+    };
+    try { recognition.start(); } catch (e) {
+      status.textContent = "麦克风启动失败：" + (e.message || e);
+      reset();
+    }
+  }
+
+  function stop() {
+    try { if (recognition) recognition.stop(); } catch (e) {}
+    recording = false;
+  }
+
+  function reset() {
+    recording = false;
+    mic.classList.remove("rec");
+    label.textContent = "按住说话 / 点一下开始";
+  }
+
+  mic.addEventListener("click", start);
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "streamlit:render") {
+      setHeight();
+    }
+  });
+  post("streamlit:componentReady", { apiVersion: 1 });
+  setHeight();
+</script>
+</body>
+</html>

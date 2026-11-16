@@ -73,6 +73,7 @@ def _tool_split_jd(jd_text: str) -> dict:
 
 def _tool_check_talk(text: str, variant: str = "boss") -> dict:
     """检查话术有没有禁用词（书面八股/报年级/堆技能）。"""
+    variant = variant if variant in {"boss", "email", "referral"} else "boss"
     hits = prompts.check_talk(text, variant)
     return {"ok": not hits, "hits": hits}
 
@@ -111,6 +112,7 @@ def _tool_match_job(profile: str, jd_text: str) -> dict:
 
 def _tool_generate_talk(profile: str, jd_text: str, variant: str = "boss") -> dict:
     """生成投递话术（v5 真人风格），命中禁用词自动带反馈重写，返回最终话术。"""
+    variant = variant if variant in {"boss", "email", "referral"} else "boss"
     talk, hits = prompts.generate_talk(_ask_model, variant, profile, jd_text)
     return {"variant": variant, "talk": talk, "banned_hits": hits}
 
@@ -184,9 +186,12 @@ def build_registry() -> dict:
         Tool("match_job", "对比求职者画像与岗位 JD，输出匹配度和匹配报告",
              {"profile": "求职者画像文本", "jd_text": "岗位 JD 全文"}, _tool_match_job),
         Tool("generate_talk", "为岗位生成投递话术（BOSS/微信版），真人风格、自动去禁用词",
-             {"profile": "求职者画像文本", "jd_text": "岗位 JD 全文", "variant": "话术场景：boss/email/referral"}, _tool_generate_talk),
+             {"profile": "求职者画像文本", "jd_text": "岗位 JD 全文",
+              "variant": "可选，话术场景：boss/email/referral，默认 boss"},
+             _tool_generate_talk, required_params=["profile", "jd_text"]),
         Tool("check_talk", "检查话术文本里有没有禁用词（书面八股/报年级/堆技能）",
-             {"text": "话术文本", "variant": "场景：boss/email/referral"}, _tool_check_talk),
+             {"text": "话术文本", "variant": "可选，场景：boss/email/referral，默认 boss"},
+             _tool_check_talk, required_params=["text"]),
         Tool("funnel", "输入各状态岗位数量 JSON，计算投递漏斗转化率",
              {"states_json": "如 {\"待投\":5,\"已投\":2,\"面试中\":1,\"Offer\":1}"}, _tool_funnel),
         Tool("needs_followup", "查询跟进提醒规则（已投超过 N 天无动静的岗位）",

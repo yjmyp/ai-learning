@@ -4,6 +4,7 @@
 跑法：python offeragent\test_twin_portal.py（需要 localhost:8501 已在跑）
 """
 import sys
+import os
 import time
 from pathlib import Path
 
@@ -18,9 +19,10 @@ import browser_fetch as bf  # noqa: E402
 from job_sources import html_to_text  # noqa: E402
 
 def main():
+    base_url = os.environ.get("OA_TEST_BASE_URL", "http://localhost:8501").rstrip("/")
     if not bf.launch(headless=True):
         raise SystemExit("Edge 启动失败")
-    ws = bf._new_tab("http://localhost:8501/?twin=1")
+    ws = bf._new_tab(f"{base_url}/?twin=1")
     cdp = bf._CDP(ws)
     cdp.call("Page.enable")
     time.sleep(15)
@@ -32,7 +34,7 @@ def main():
 
     checks = [
         ("名片头有姓名", "余剑" in text),
-        ("有职位定位", "AI 应用开发实习生" in text),
+        ("有职位定位", "AI/Agent 系统交付" in text),
         ("有学校 / 届别标签", "南京邮电大学" in text and "2027" in text),
         ("照片位存在（图或占位字）", "余" in text),
         ("有分享/转载入口", ("分享" in text) or ("转载" in text)),
@@ -41,6 +43,8 @@ def main():
         ("有「我是谁」页签", "我是谁" in text),
         ("有「项目证据」页签", "项目证据" in text),
         ("提到 RAG 项目", "RAG" in text),
+        ("使用当前评估口径", "95%" in text and "740" in text),
+        ("不宣称已上线", "已上线" not in text),
         ("没有 Traceback", "Traceback" not in text),
     ]
     ok = 0

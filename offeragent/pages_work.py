@@ -162,6 +162,30 @@ def _search_view() -> dict:
             "restored": False, "age_s": 0, "query": None,
             "inflight": job_sources.search_in_flight(),
         }
+    # 还在跑的时候，先看 partial 快照（每个源完成就更新一次）
+    inflight = job_sources.search_in_flight()
+    if inflight:
+        partial = job_sources.load_partial()
+        if partial and partial.get("merged"):
+            return {
+                "jobs": partial.get("merged") or [],
+                "stats": _as_dict(partial.get("by_source")),
+                "errors": _as_dict(partial.get("errors")),
+                "diag": _as_dict(partial.get("diag")),
+                "cities": _as_dict(partial.get("cities")),
+                "miss": _as_dict(partial.get("city_miss")),
+                "relaxed_all": bool(partial.get("relaxed_all")),
+                "wants": partial.get("wants") or [],
+                "elapsed": partial.get("elapsed"),
+                "cache_hits": int(partial.get("cache_hits") or 0),
+                "restored": False, "age_s": partial.get("age_s") or 0,
+                "query": partial.get("keyword") or "",
+                "inflight": True,
+                "partial": True,
+                "done": int(partial.get("done") or 0),
+                "total": int(partial.get("total") or 0),
+            }
+
     snap = job_sources.load_last_search()
     if snap:
         return {
@@ -177,12 +201,12 @@ def _search_view() -> dict:
             "cache_hits": int(snap.get("cache_hits") or 0),
             "restored": True, "age_s": snap.get("age_s") or 0,
             "query": snap.get("keyword") or "",
-            "inflight": job_sources.search_in_flight(),
+            "inflight": inflight,
         }
     return {"jobs": [], "stats": {}, "errors": {}, "diag": {}, "cities": {}, "miss": {},
             "relaxed_all": False, "wants": [], "elapsed": None, "cache_hits": 0,
             "restored": False, "age_s": 0, "query": None,
-            "inflight": job_sources.search_in_flight()}
+            "inflight": inflight}
 
 
 # ============================================================
@@ -195,44 +219,47 @@ def page_jobs():
 
     # ---- 关键词搜岗 ----
     with tab_search:
-        st.caption("填关键词 + 选城市，点一次就搜完所有来源并合并去重。"
-                   "默认只搜**不用登录**的来源（云端也能跑）。")
-        c1, c2 = st.columns([2, 3])
-        kw = c1.text_input("关键词（可写多个，用空格或逗号分开）", value="AI",
-                           key="wq_kw", placeholder="AI 大模型 Agent,RAG")
-        cities = c2.multiselect("城市（可多选；远程=海外 remote 岗位）", job_sources.COMMON_CITIES,
-                                default=["南京"], accept_new_options=True, key="wq_cities",
-                                help="也能直接输入表里没有的城市（回车确认）。留空 = 全国。")
-        c3, c4 = st.columns([3, 2])
-        picked_sources = c3.multiselect(
-            "来源", job_sources.SOURCES, default=job_sources.NO_LOGIN_SOURCES,
-            key="wq_sources",
-            help="默认三个是国内的公开接口（免登录、云端可用）。"
-                 "海外那组（Remotive/RemoteOK/Arbeitnow/WWR/HN/Greenhouse）都是公开 API/RSS，"
-                 "本机需要代理、云端直连即可；实习僧要本机浏览器；BOSS 要本机登录。")
-        strict_city = c4.toggle("只要命中城市的岗位", value=True, key="wq_strict",
-                                help="打开：城市不匹配的直接不显示（推荐）。"
-                                     "如果所有来源都没有该城市的岗位，会自动放宽并提示。")
-        depth = st.slider("每个来源最多抓多少条（越大越慢）", min_value=40, max_value=500,
-                          value=200, step=20, key="wq_depth",
-                          help="实测网易同一关键词有 1011 条、牛客 302 条、HN 招聘贴 782 条；"
-                               "以前每个来源只翻 1-2 页（40-100 条），所以你觉得岗位太少。"
-                               "现在按这个数决定翻几页。")
-        c5, c6 = st.columns([3, 2])
-        use_cache = c5.toggle("用缓存（同关键词 + 城市，10 分钟内秒回）", value=True,
-                              key="wq_usecache",
-                              help="抓一次多平台要十几秒，几乎全是等网络。同一条件 10 分钟内再搜"
-                                   "就直接复用上次结果（0 秒，也不打站点）；想拿最新岗位就关掉它。")
-        cs = job_sources.cache_stats()
-        c6.caption(f"缓存：{cs['entries']} 条 · {cs['size_kb']} KB · 有效 {cs['ttl_min']} 分钟")
-        if c6.button("🧹 清空搜索缓存", key="wq_clear_cache"):
-            _n = job_sources.cache_clear()
-            st.success(f"已清空 {_n} 条搜索缓存（下次搜岗会重新联网抓）")
-        with st.expander("➕ 自定义来源（填任意公开 RSS / JSON 列表地址，程序自己抽岗位）"):
-            custom_url = st.text_input(
-                "RSS / Atom / JSON 地址", value="", key="wq_custom_url",
-                placeholder="例如学校就业网 RSS、公司招聘 JSON、社区汇总贴 API")
-            st.caption("只读公开内容、不绕登录。填了就在本次搜索里一起抓，来源标为「自定义来源」。")
+        with st.container(border=True):
+            st.markdown("##### 🔎 搜索条件")
+            st.caption("填关键词 + 选城市，点一次就搜完所有来源并合并去重。"
+                       "默认只搜**不用登录**的来源（云端也能跑）。")
+            c1, c2 = st.columns([2, 3])
+            kw = c1.text_input("关键词（可写多个，用空格或逗号分开）", value="AI",
+                               key="wq_kw", placeholder="AI 大模型 Agent,RAG")
+            cities = c2.multiselect("城市（可多选；远程=海外 remote 岗位）", job_sources.COMMON_CITIES,
+                                    default=["南京"], accept_new_options=True, key="wq_cities",
+                                    help="也能直接输入表里没有的城市（回车确认）。留空 = 全国。")
+            c3, c4 = st.columns([3, 2])
+            picked_sources = c3.multiselect(
+                "来源", job_sources.SOURCES, default=job_sources.NO_LOGIN_SOURCES,
+                key="wq_sources",
+                help="默认三个是国内的公开接口（免登录、云端可用）。"
+                     "电鸭社区是中文远程/兼职岗；海外那组（Remotive/RemoteOK/Arbeitnow/WWR/HN/Greenhouse）"
+                     "都是公开 API/RSS，"
+                     "本机需要代理、云端直连即可；实习僧要本机浏览器；BOSS 要本机登录。")
+            strict_city = c4.toggle("只要命中城市的岗位", value=True, key="wq_strict",
+                                    help="打开：城市不匹配的直接不显示（推荐）。"
+                                         "如果所有来源都没有该城市的岗位，会自动放宽并提示。")
+            depth = st.slider("每个来源最多抓多少条（越大越慢）", min_value=40, max_value=500,
+                              value=200, step=20, key="wq_depth",
+                              help="实测网易同一关键词有 1011 条、牛客 302 条、HN 招聘贴 782 条；"
+                                   "以前每个来源只翻 1-2 页（40-100 条），所以你觉得岗位太少。"
+                                   "现在按这个数决定翻几页。")
+            c5, c6 = st.columns([3, 2])
+            use_cache = c5.toggle("用缓存（同关键词 + 城市，30 分钟内秒回）", value=True,
+                                  key="wq_usecache",
+                                  help="抓一次多平台要十几秒，几乎全是等网络。同一条件 30 分钟内再搜"
+                                       "就直接复用上次结果（0 秒，也不打站点）；想拿最新岗位就关掉它。")
+            cs = job_sources.cache_stats()
+            c6.caption(f"缓存：{cs['entries']} 条 · {cs['size_kb']} KB · 有效 {cs['ttl_min']} 分钟")
+            if c6.button("🧹 清空搜索缓存", key="wq_clear_cache"):
+                _n = job_sources.cache_clear()
+                st.success(f"已清空 {_n} 条搜索缓存（下次搜岗会重新联网抓）")
+            with st.expander("➕ 自定义来源（填任意公开 RSS / JSON 列表地址，程序自己抽岗位）"):
+                custom_url = st.text_input(
+                    "RSS / Atom / JSON 地址", value="", key="wq_custom_url",
+                    placeholder="例如学校就业网 RSS、公司招聘 JSON、社区汇总贴 API")
+                st.caption("只读公开内容、不绕登录。填了就在本次搜索里一起抓，来源标为「自定义来源」。")
         city = " ".join(cities)
         if st.button("🔍 开始搜岗", type="primary", key="wq_search"):
             if not picked_sources:
@@ -272,13 +299,23 @@ def page_jobs():
             st.info(f"下面这些是**上一次搜岗**的结果（关键词「{view['query'] or '—'}」，"
                     f"{_ago(view['age_s'])}前，共 {len(view['jobs'])} 条）——"
                     "刚才那次页面重跑把「开始搜岗」那一下冲掉了，结果没丢。"
-                    "想要最新的岗位，再点一次「开始搜岗」（10 分钟内命中缓存，秒回）。")
-        elif view["inflight"] and not view["jobs"]:
-            st.info("⏳ 上一次搜岗还在跑：页面重跑打断的只是显示，结果不会丢。"
-                    "等它跑完，点下面的「🔄 刷新看看」就能看到结果"
-                    "（或再点一次「开始搜岗」，同一条件 10 分钟内命中缓存秒回）。")
-            if st.button("🔄 刷新看看", key="wq_refresh"):
-                st.rerun()
+                    "想要最新的岗位，再点一次「开始搜岗」（30 分钟内命中缓存，秒回）。")
+        elif view["inflight"]:
+            if view.get("partial") and view["jobs"]:
+                done = view.get("done") or 0
+                total = view.get("total") or 0
+                pct = int(round(done / max(1, total) * 100))
+                st.info(f"⏳ 正在搜索，已完成 **{done}/{total}** 个来源（{pct}%）。"
+                        f"下面是目前抓到的 {len(view['jobs'])} 条，后面的源陆续会加进来。"
+                        " 点刷新看最新进度。")
+                if st.button("🔄 刷新进度", key="wq_refresh"):
+                    st.rerun()
+            else:
+                st.info("⏳ 上一次搜岗还在跑：页面重跑打断的只是显示，结果不会丢。"
+                        "等它跑完，点下面的「🔄 刷新看看」就能看到结果"
+                        "（或再点一次「开始搜岗」，同一条件 30 分钟内命中缓存秒回）。")
+                if st.button("🔄 刷新看看", key="wq_refresh"):
+                    st.rerun()
         if stats:
             st.markdown("**各来源命中：**" + "　".join(
                 f"{k} **{v}** 条" for k, v in stats.items()))
@@ -288,7 +325,7 @@ def page_jobs():
                 st.caption(
                     f"⏱️ 本次耗时 {_el:.1f} 秒"
                     + (f"（其中 {_ch} 个来源命中缓存、没有联网）" if _ch else "")
-                    + "　·　同一关键词+城市在 10 分钟内再搜会直接复用缓存")
+                    + "　·　同一关键词+城市在 30 分钟内再搜会直接复用缓存")
             if wants:
                 st.caption("城市条件：" + "、".join(wants)
                            + ("（严格：不匹配的不显示）" if strict_city else ""))
@@ -371,6 +408,7 @@ def page_jobs():
             if picked and st.button(f"📥 把选中的 {len(picked)} 条加入岗位库",
                                     type="primary", key="save_src"):
                 added = 0
+                already_applied = 0
                 bar = st.progress(0.0, text="准备入库…")
                 for idx, j in enumerate(picked):
                     name = re.sub(r"[^\w\u4e00-\u9fa5]+", "_",
@@ -396,7 +434,7 @@ def page_jobs():
                     if not body:
                         body = "（没抓到 JD 原文。可打开链接手动补，或直接跑匹配试试）"
                     jd_text = head + "\n" + body
-                    save_new_job(name, j["city"], jd_text, j["url"], extra={
+                    msg = save_new_job(name, j["city"], jd_text, j["url"], extra={
                         "source": j.get("source", ""),
                         "title": j.get("title", ""),
                         "company": j.get("company", ""),
@@ -405,12 +443,17 @@ def page_jobs():
                         "search_query": query,
                         "quality": job_quality.assess(j),
                     })
-                    added += 1
+                    if "识别为已投" in msg:
+                        already_applied += 1
+                    else:
+                        added += 1
                     bar.progress((idx + 1) / len(picked), text=f"已入库 {j['title']}")
                 bar.progress(1.0, text="完成")
-                st.success(f"入库 {added} 条（含 JD 原文，重复的已跳过）。"
+                repeat_note = (f"；另有 {already_applied} 条历史已投，已自动标为已投"
+                               if already_applied else "")
+                st.success(f"入库 {added} 条（含 JD 原文，重复的已跳过{repeat_note}）。"
                            "去「匹配分析」跑一下就能看到匹配度。")
-                if added:
+                if added or already_applied:
                     next_step("saved_job")
         elif results == [] and st.session_state.get("sr_search_done"):
             st.warning("没搜到结果。换个关键词或来源试试；BOSS 记得先登录。")
@@ -468,7 +511,7 @@ def page_jobs():
     # ---- 岗位列表 ----
     jobs = list_jobs()
     if not jobs:
-        st.info("暂无岗位")
+        empty_state("岗位库是空的", "用上面的「关键词搜岗」抓一批，或粘贴 JD 链接手动入库。", icon="🗂️")
         return
     _bm = st.session_state.pop("batch_msg", "")
     if _bm:
@@ -592,15 +635,19 @@ def page_jobs():
                         st.markdown("**④ 标记已投**")
                         st.caption("发送由你自己按；这里只负责记录状态，之后 7 天没动静会自动进跟进提醒。")
                         if st.button("④ 我发出去了，标记已投", key=f"f4_{name}"):
-                            meta["status"] = "已投"
-                            meta["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                            save_meta(name, meta)
-                            apply_assist.log_application(
-                                name, meta,
-                                st.session_state.get(f"talk_{name}_boss", ""))
-                            st.session_state["flow_done"] = name
-                            next_step("applied", defer=True)
-                            st.rerun()
+                            gate = check_apply_allowed(name, meta)
+                            if not gate["allowed"]:
+                                st.warning(gate["reason"])
+                            else:
+                                meta["status"] = "已投"
+                                meta["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                                save_meta(name, meta)
+                                apply_assist.log_application(
+                                    name, meta,
+                                    st.session_state.get(f"talk_{name}_boss", ""))
+                                st.session_state["flow_done"] = name
+                                next_step("applied", defer=True)
+                                st.rerun()
                     if st.session_state.get("flow_msg"):
                         st.success(st.session_state.pop("flow_msg"))
                     if st.session_state.get("flow_done") == name:
@@ -610,9 +657,15 @@ def page_jobs():
                 goto_page("match", match_pick=name)
         with cols[2]:
             if not excl and st.button("✅ 已投", key=f"d_{name}"):
-                meta["status"] = "已投"
-                save_meta(name, meta)
-                st.rerun()
+                gate = check_apply_allowed(name, meta)
+                if not gate["allowed"]:
+                    st.warning(gate["reason"])
+                else:
+                    meta["status"] = "已投"
+                    meta["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    save_meta(name, meta)
+                    apply_assist.log_application(name, meta)
+                    st.rerun()
         with cols[3]:
             if not excl and st.button("🚫 排除", key=f"x_{name}"):
                 meta["status"] = "排除"

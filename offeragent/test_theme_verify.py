@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""验证三套主题切换后样式真的不同（对比侧边栏底色、字号、圆角）。"""
+"""验证 Pro 主题（唯一设计语言）的关键样式真的生效（侧边栏底色/字号/主色变量）。"""
 import json
 import sys
 import time
@@ -10,7 +10,7 @@ sys.path.insert(0, str(HERE))
 import browser_fetch as bf  # noqa: E402
 
 CFG = HERE / "data" / "config.json"
-THEMES = ["A 默认（深蓝·中庸）", "B Linear（深色紧凑）", "C Stripe（浅色宽松）"]
+THEMES = ["P 产品级（浅色）"]
 QUERY = {
     "侧边栏底色": "(function(){var e=document.querySelector('[data-testid=stSidebar]');return e?getComputedStyle(e).backgroundColor:'无';})()",
     "全局字号": "getComputedStyle(document.body).fontSize",

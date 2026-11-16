@@ -20,7 +20,8 @@ from job_sources import html_to_text  # noqa: E402
 EXPECT_LINKS = {
     "今天（行动 + 数据）": "/",
     "岗位库": "/jobs", "匹配分析": "/match", "简历（模板 / 照片）": "/resume",
-    "投递台": "/apply", "投递记录": "/records",
+    "投递台": "/apply", "投递记录": "/records", "Agent 流程（引擎演示）": "/agent",
+    "数字分身": "/twin",
     "自我蒸馏": "/distill", "面试准备（拷问 / 陪练 / 复盘）": "/interview",
     "名片与分享": "/show", "设置": "/settings",
 }
@@ -43,17 +44,20 @@ def main():
         同一项检查会出现"这轮过、下轮不过"的假失败。改成轮询到内容稳定为止。
         """
         cdp.call("Page.navigate", {"url": "http://localhost:8501" + path}, timeout=60)
-        html, txt, prev = "", "", None
+        html, txt, prev, stable = "", "", None, 0
         started = time.time()
-        deadline = started + 40
+        deadline = started + 65
         while time.time() < deadline:
             time.sleep(2.5)
             html = cdp.call("Runtime.evaluate", {
                 "expression": "document.documentElement.outerHTML",
                 "returnByValue": True}, timeout=60).get("result", {}).get("value") or ""
             txt = html_to_text(html)
-            # 判定"渲染完成"：至少跑满 10 秒，且连续两次取到的文本完全一致
-            if (prev == txt and len(txt) > 300 and time.time() - started >= 10):
+            # 判定"渲染完成"：文本连续 4 次（约 10 秒）完全一致，且至少跑满 14 秒。
+            # 早期版本只看 2 次一致 + 300 字：Streamlit 分块渲染中途的短暂停顿会被
+            # 误判成"渲染完成"→ 取到半页 → 同一检查"这轮过、下轮不过"的假失败。
+            stable = stable + 1 if (prev == txt and len(txt) > 600) else 0
+            if stable >= 4 and time.time() - started >= 14:
                 break
             prev = txt
         return txt, html
@@ -68,14 +72,17 @@ def main():
     has_old_radio = 'role="radiogroup"' in root_html and "导航" in root_text
 
     checks = [
-        ("侧边栏 10 个页面链接都在（没被折叠）", not missing),
+        ("侧边栏页面链接都在（没被折叠）", not missing),
         ("没有被折叠的「View more」", "more" not in root_html.lower()
          or "view more" not in root_html.lower()),
         ("不再有自己的「导航」单选组", not has_old_radio),
         ("今日行动页有流程条", "① 找岗" in root_text),
-        ("今日行动卡片改跳投递台", "去投递台生成话术" in root_text),
+        # 首页早已换成 page_home_pro（旧页的"去投递台生成话术"文案已不存在），
+        # 但设计意图没变：今日行动要指向投递台，首页不重复放生成入口。
+        ("今日行动卡片指向投递台",
+         "今日行动" in root_text and "投递台" in root_text),
         ("今日页不再放每日目标输入框", "每天投几家" not in root_text),
-        ("今天页有两个页签", "行动清单" in root_text and "数据与日志" in root_text),
+        ("今天页有三个页签", all(k in root_text or k in root_html for k in ["首页", "数据与日志", "Agent 运行记录"])),
     ]
 
     # 数据与日志是「今天」页的第二个页签

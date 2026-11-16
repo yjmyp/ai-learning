@@ -14,7 +14,7 @@ import job_detail
 import job_quality
 import theme
 
-from store import MATCH_DIR, read_text, save_meta
+from store import MATCH_DIR, PROFILE_PATH, list_jobs, read_text, save_meta
 
 
 def score_color(score):
@@ -220,6 +220,73 @@ def next_step(key: str, extra: str = "", defer: bool = False):
         st.session_state["_pending_hint"] = text
     else:
         st.info(text)
+
+
+# ============================================================
+# 统一状态组件（空态）——页面内部一致性
+# ============================================================
+def empty_state(title, desc="", icon="📭", hint=""):
+    """统一的空状态卡片：替代裸 st.info/st.caption，全站观感一致。
+
+    title 一句结论，desc 一句解释，hint 给一条下一步（可选）。
+    """
+    parts = [
+        '<div class="oa-empty">',
+        f'<div class="oa-empty-icon">{icon}</div>',
+        f'<div class="oa-empty-title">{title}</div>',
+    ]
+    if desc:
+        parts.append(f'<div class="oa-empty-desc">{desc}</div>')
+    if hint:
+        parts.append(f'<div class="oa-empty-hint">{hint}</div>')
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+def error_box(title, detail=""):
+    """统一的错误态卡片（用于不该用 st.error 的块级失败说明）。"""
+    html = f'<div class="oa-errbox"><div class="oa-errbox-title">⚠️ {title}</div>'
+    if detail:
+        html += f'<div class="oa-errbox-detail">{detail}</div>'
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+# ============================================================
+# 首屏引导（新用户第一次打开时告诉他缺什么）
+# ============================================================
+def onboarding_panel():
+    """首屏引导：缺什么就给什么，一键跳过去。不需要时静默不显示。"""
+    todo = []
+    if not PROFILE_PATH.exists():
+        todo.append(("还没有「个人画像」", "distill", "匹配和话术都依赖它，花 10 分钟答完 15 题就有"))
+    jobs = list_jobs()
+    if not jobs:
+        todo.append(("岗位库是空的", "jobs", "给个关键词搜一次岗，勾选入库"))
+    elif not any(m.get("match_score") is not None for _, m, _ in jobs):
+        todo.append(("岗位还没有匹配度", "match", "跑一次就知道值不值得投"))
+    if not any(m.get("status") in ("已投", "面试中", "已拒", "Offer")
+               for _, m, _ in jobs):
+        todo.append(("还没投出去过", "apply", "话术在这里生成，发送那一下由你自己按"))
+
+    if not todo:
+        return
+
+    rows = "".join(
+        f'<div class="oa-step"><span class="oa-step-dot">{i}</span>'
+        f'<div><div class="oa-step-title">{t}</div>'
+        f'<div class="oa-step-hint">{h}</div></div></div>'
+        for i, (t, _k, h) in enumerate(todo, 1)
+    )
+    st.markdown(
+        f'<div class="oa-onboard"><div class="oa-onboard-head">还差这几步就能投递</div>{rows}</div>',
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(3)
+    for i, (t, target, _h) in enumerate(todo):
+        with cols[i % 3]:
+            if st.button(f"去处理 · {t}", key=f"ob_{target}"):
+                goto_page(target)
 
 
 # ============================================================

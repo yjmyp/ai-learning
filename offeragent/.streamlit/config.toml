@@ -1,15 +1,25 @@
+[global]
+# 关掉开发模式：不关的话打成 exe 后用 --server.port 指定端口会直接报
+# "server.port does not work when global.developmentMode is true"
+developmentMode = false
+
 [theme]
 base = "light"
-primaryColor = "#1D4ED8"
-backgroundColor = "#F8FAFC"
+primaryColor = "#4F46E5"
+backgroundColor = "#F6F7FB"
 secondaryBackgroundColor = "#FFFFFF"
-textColor = "#0F172A"
+textColor = "#0B1020"
 font = "sans serif"
-baseRadius = "small"
+baseRadius = "medium"
 showWidgetBorder = true
 
 [server]
 headless = true
+enableStaticServing = true
+
+[browser]
+# 本地 UI 巡检不依赖 Streamlit 遥测；关闭后也避免远端 metrics 连接失败污染控制台
+gatherUsageStats = false
 
 [client]
 # 公网名片页要把 Streamlit 自己的工具栏收起来，看起来才像个正经作品页

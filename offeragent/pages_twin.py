@@ -14,6 +14,10 @@ from llm import *
 from ui_kit import *
 import apply_assist
 import digital_twin
+import twin_core
+import twin_avatar
+import twin_stage
+import twin_voice
 import twin_guard
 import distill
 import job_sources
@@ -61,17 +65,23 @@ def avatar_bytes():
 
 
 def public_base_url() -> str:
-    """当前部署的公开地址（用于生成「分享/转载」链接）。"""
+    """当前部署的公开**根**地址（生成「分享/转载」链接用）。
+
+    注意：必须只保留 scheme://host[:port] —— 之前保留了页面路径，
+    在 /show 页会生成 `.../show/?twin=1` 这种带多余路径的分享链接。
+    """
     try:
         u = str(getattr(st.context, "url", "") or "")
         if u.startswith("http"):
-            return u.split("?")[0].rstrip("/")
+            from urllib.parse import urlsplit
+            sp = urlsplit(u)
+            if sp.scheme and sp.netloc:
+                return f"{sp.scheme}://{sp.netloc}"
     except Exception:
         pass
     return "https://ai-learning-c62pgpcfp7us6rztelatpj.streamlit.app"
 
 
-RAG_APP_URL = "https://ai-learning-fphncazxmg3pnesntwchz6.streamlit.app/"
 GITHUB_URL = "https://github.com/yjmyp/ai-learning"
 CONTACT_EMAIL = "yj2994762833@gmail.com"
 PRESET_QUESTIONS = [
@@ -80,7 +90,7 @@ PRESET_QUESTIONS = [
     "你的网络工程背景对做 AI 应用有什么帮助？",
     "你怎么评估你的 RAG 系统效果？",
     "你最大的短板是什么？",
-    "为什么想投 AI 应用开发实习？",
+    "为什么应聘 AI/Agent 系统交付方向？",
 ]
 
 
@@ -102,8 +112,9 @@ def _twin_answer(profile: str, question: str) -> str:
 
 
 def _resume_pdf_path():
-    """名片页下载按钮用的 PDF：优先新的 v3，其次旧版。"""
-    for fn in ("余剑-简历-AI应用开发实习-v3.pdf",
+    """名片页下载按钮用的 PDF：优先 2027 校招版，其次保留的旧版。"""
+    for fn in ("余剑-简历-AI应用开发-2027校招.pdf",
+               "余剑-简历-AI应用开发实习-v3.pdf",
                "余剑-应聘AI应用开发实习-本科.pdf"):
         p = BASE_DIR.parent / "简历" / fn
         if p.exists():
@@ -132,26 +143,19 @@ def page_twin_portal():
     with st.container(border=True):
         c1, c2 = st.columns([1, 4], vertical_alignment="center")
         with c1:
-            if av:
-                st.image(av, width=132)
-            else:
-                st.markdown(
-                    '<div style="width:132px;height:132px;border-radius:50%;'
-                    'background:linear-gradient(135deg,#5558D6,#1B2A4A);color:#fff;'
-                    'display:flex;align-items:center;justify-content:center;'
-                    'font-size:46px;font-weight:700;">余</div>',
-                    unsafe_allow_html=True)
+            _portal_avatar = st.session_state.get("twin_avatar_file") or twin_stage.DEFAULT_AVATAR
+            twin_stage.stage("idle", name="余剑", caption="AI/Agent 系统交付 · 2027 届",
+                             avatar=_portal_avatar, height=280, key="twin_portal_stage")
         with c2:
-            st.markdown("## 余剑 · AI 应用开发实习生")
+            st.markdown("## 余剑 · AI/Agent 系统交付")
             with st.container(horizontal=True):
                 st.badge("南京邮电大学", icon=":material/school:", color="blue")
                 st.badge("网络工程 · 2027 届", icon=":material/badge:", color="gray")
-                st.badge("南京 / 可远程", icon=":material/location_on:", color="green")
-                st.badge("2026.09 下旬可到岗", icon=":material/event_available:", color="violet")
-            st.caption("LLM 应用 · RAG 检索增强 · Agent 工具调用。"
-                       "下面每个数字都能现场演示，不靠形容词。")
+                st.badge("南京优先 · 城市可沟通", icon=":material/location_on:", color="green")
+                st.badge("2027 届校招 · 可尽快到岗", icon=":material/event_available:", color="violet")
+            st.caption("AI/Agent 系统交付 · RAG 检索 · Python 后端。"
+                       "对外数字来自可复现的评估报告，不用未经验证的宣传口径。")
             with st.container(horizontal=True):
-                st.link_button("RAG 应用（在线）", RAG_APP_URL, icon=":material/open_in_new:")
                 st.link_button("GitHub 代码", GITHUB_URL, icon=":material/code:")
                 if pdf:
                     st.download_button("简历 PDF", pdf.read_bytes(),
@@ -208,9 +212,9 @@ def page_twin_portal():
         cols = st.columns(4, vertical_alignment="top")
         for col, (k, v) in zip(cols, [
                 ("学历", "南京邮电大学\n网络工程 · 本科"),
-                ("届别", "2027 届\n2026.09 下旬起可实习"),
-                ("求职方向", "AI 应用开发\nAgent 开发 / 大模型评测"),
-                ("坐标", "南京优先\n可远程 · 4-5 天/周")]):
+                ("届别", "2027 届\n本科校招 · 可尽快到岗"),
+                ("求职方向", "AI/Agent 系统交付\nPython 后端 / 智能运维"),
+                ("坐标", "南京优先\n城市可沟通")]):
             col.markdown(f"**{k}**\n\n{v}")
         st.space("small")
         with st.container(border=True):
@@ -229,15 +233,15 @@ def page_twin_portal():
     with tab_proof:
         st.caption("每个链接都能点开验证；所有数字来自他自己的评估集，可以现场跑给你看。")
         with st.container(border=True):
-            st.markdown("**RAG 知识库问答系统 · 已上线**")
+            st.markdown("**RAG 检索问答服务 · 本地可复现**")
             with st.container(horizontal=True):
-                st.badge("254 块向量库", color="blue")
-                st.badge("top-5 命中 92%", color="green")
+                st.badge("33 篇 / 740 块", color="blue")
+                st.badge("240 条评估集", color="orange")
+                st.badge("R@5 95%", color="green")
                 st.badge("带引用溯源", color="gray")
-            st.caption("11 篇资料 → 300 字/块切分（重叠 50）→ bge 向量化 → Chroma → top-k 召回 "
-                       "→ TF-IDF 重排 → DeepSeek 生成。自建 12 条评估集，量化 top-1/3/5 = "
-                       "75% / 83% / 92%。")
-            st.link_button("打开应用", RAG_APP_URL, icon=":material/open_in_new:")
+            st.caption("33 篇资料 / 740 块 → bge 向量化 + BM25 混合召回 → 多特征重排 → "
+                       "带引用生成；240 条评估集上 R@5 95%、MRR 0.856，P95 88ms。"
+                       "代码、评估集与报告在 GitHub 仓库中可复现。")
         with st.container(border=True):
             st.markdown("**Agent 工具调用（工程化细节）**")
             with st.container(horizontal=True):
@@ -271,30 +275,153 @@ def page_twin_portal():
 # 页面：数字分身（合规版：替你准备，真人上场）
 # ============================================================
 def twin_practice_section(profile: str):
-    """分身陪练：拿画像当记忆，练参考话术、准备自我介绍和反问清单。"""
-    hero("分身陪练", "它用你的画像当记忆，替你先答一版；真人上场的是你")
-    if not profile.strip():
-        st.warning("先去「🧬 我的 → 自我蒸馏」生成画像，分身才有记忆。")
+    """数字人：虚拟人形象 + 多轮对话，人格底座来自整套蒸馏档案。"""
+    hero("数字分身", "它读你的整套档案（画像 / 亮点 / 表达风格 / 硬边界）替你先答一版；上场的是你本人")
+    st.markdown(
+        "<style>"
+        ".st-key-oa_twin_chat{height:100%!important;}"
+        "div[data-testid='stLayoutWrapper']:has(>.st-key-oa_twin_chat){"
+        "height:clamp(320px,calc(100vh - 370px),640px)!important;"
+        "flex-basis:clamp(320px,calc(100vh - 370px),640px)!important;}"
+        "</style>",
+        unsafe_allow_html=True)
+    ready = twin_core.readiness()
+    if ready["score"] == 0:
+        st.warning("一份档案都没有。先去「🧬 我的 → 自我蒸馏」答完题生成档案，分身才有记忆。")
         if st.button("现在去蒸馏", key="to_distill"):
             goto_page("distill")
         return
-    with st.expander("📄 分身当前记忆（画像全文）", expanded=False):
-        st.markdown(profile)
-    st.markdown("##### 让分身替你答一版")
-    st.caption("这是参考话术，不是替考。你本人上场时用自己的话说会更自然。")
-    q = st.text_area("你的问题（面试里卡住的问题也可以扔给它）", key="twin_q",
-                     placeholder="例：你的 RAG 系统如果检索出来全是错的，怎么办？")
-    if st.button("让分身回答", type="primary", key="twin_go"):
-        with st.spinner("分身思考中…"):
-            try:
-                st.session_state["twin_a"] = digital_twin.twin_answer(
-                    profile, q.strip(), lambda p: ask_chat(p))
-            except Exception as e:
-                st.error(str(e))
-    a = st.session_state.get("twin_a", "")
-    if a:
-        st.markdown(f'<div class="oa-card">💬 分身：{a}</div>', unsafe_allow_html=True)
-        st.caption("对照你自己的答法：它哪里更具体？哪句你没想到？")
+
+    state = twin_core.load_chat()
+
+    # 两趟式：本趟先把形象渲染成「思考中」，再真的去问模型，
+    # 这样等待期间浏览器上看到的是会转的思考环，而不是一片空白。
+    pending = st.session_state.pop("_twin_pending", None)
+    spoke_at = float(st.session_state.get("twin_spoke_at") or 0)
+    if pending:
+        avatar_state = "thinking"
+    elif time.time() - spoke_at < 6:
+        avatar_state = "speaking"
+    else:
+        avatar_state = "idle"
+
+    _last_ans = next((m["content"] for m in reversed(state["messages"])
+                      if m["role"] == "assistant" and (m.get("content") or "").strip()), "")
+
+    left, right = st.columns([1, 2.5], gap="large")
+
+    with left:
+        _avs = twin_stage.available_avatars()
+        _names = [n for n, _ in _avs]
+        _labels = [lab for _, lab in _avs]
+        _cur = st.session_state.get("twin_avatar_file") or twin_stage.DEFAULT_AVATAR
+        if _cur not in _names:
+            _cur = twin_stage.DEFAULT_AVATAR
+        twin_stage.stage(
+            avatar_state, name="余剑",
+            caption=f"数字分身 · 人格底座 {ready['score']}/{ready['total']}",
+            avatar=_cur, height=270, key="twin_stage_" + _cur)
+        if _last_ans:
+            st.caption("🔊 最新回答")
+            twin_voice.player(_last_ans, compact=True, height=68,
+                              voice=st.session_state.get("twin_voice_name", ""),
+                              rate=int(st.session_state.get("twin_voice_rate") or 0),
+                              autoplay=bool(st.session_state.get("twin_voice_auto")))
+        with st.container(border=True):
+            _spoken = twin_voice.listen(key="twin_mic")
+            _vtxt = str((_spoken or {}).get("text") or "").strip()
+            _vts = str((_spoken or {}).get("ts") or "")
+            if _vtxt and _vts and _vts != st.session_state.get("twin_voice_ts"):
+                st.session_state["twin_voice_ts"] = _vts
+                st.session_state["_twin_pending"] = _vtxt
+                st.rerun()
+        with st.expander("🎭 换个形象 / 上传自己的 VRM", expanded=False):
+            _pick = st.selectbox("内置形象（CC0 素材）", _labels,
+                                 index=_labels.index(dict(_avs)[_cur]) if _cur in dict(_avs) else 0,
+                                 key="twin_avatar_pick")
+            _sel = _names[_labels.index(_pick)]
+            if _sel != _cur:
+                st.session_state["twin_avatar_file"] = _sel
+                st.rerun()
+            _up = st.file_uploader("上传 .vrm（VRoid Studio 等导出的都行）",
+                                   type=["vrm"], key="twin_vrm_up")
+            if _up is not None:
+                try:
+                    _fn = twin_stage.save_upload(_up.getvalue(), _up.name)
+                    st.session_state["twin_avatar_file"] = _fn
+                    st.success("已载入 " + _fn)
+                    st.rerun()
+                except Exception as _e:
+                    st.error("上传失败：" + str(_e))
+            st.caption("形象只在本地渲染，不上传到任何服务器。")
+        with st.expander("🎙 语音与口型", expanded=False):
+            _vs = list(twin_voice.voices())
+            if _vs:
+                st.selectbox("音色（本机 Windows 语音）", _vs, key="twin_voice_name",
+                             help="Huihui / Yaoyao / Kangkang 都是离线中文语音；"
+                                  "不同系统装的音色可能不一样。")
+            else:
+                st.caption("没找到中文语音。Windows 设置 → 时间和语言 → 语音 里装一个中文语音包。")
+            st.slider("语速", -3, 3, 0, key="twin_voice_rate",
+                      help="0 是正常语速；负数更慢，正数更快。")
+            st.checkbox("新回答自动播放", value=False, key="twin_voice_auto",
+                        help="浏览器可能仍然拦截自动播放；被拦时点播放器即可。")
+            st.caption("左侧播放器播放时，3D 形象会同步张嘴。")
+            if st.button("试听当前音色", key="twin_voice_demo"):
+                twin_voice.player(
+                    "你好，我是余剑的数字分身。这段话用来试听当前音色。",
+                    label="试听", voice=st.session_state.get("twin_voice_name", ""),
+                    rate=int(st.session_state.get("twin_voice_rate") or 0))
+        st.caption("已装载：" + "、".join(ready["have_labels"]))
+        if ready["missing"]:
+            with st.expander(f"还缺 {len(ready['missing'])} 份", expanded=False):
+                st.markdown("\n".join(f"- {x}" for x in ready["missing"]))
+        with st.expander("🎯 纠偏 / 记忆", expanded=False):
+            c = st.text_input("它哪句话不像你？写「以后别说 XX」", key="twin_corr")
+            if st.button("记住这条", key="twin_corr_go"):
+                if twin_core.add_correction(state, c):
+                    st.success("记住了，下次起生效")
+                    st.rerun()
+                else:
+                    st.caption("没有新内容可记")
+            if state.get("corrections"):
+                st.markdown("**已生效：**\n" +
+                            "\n".join(f"- {x}" for x in state["corrections"]))
+            if st.button("🗑 清空对话（保留纠偏）", key="twin_clear"):
+                keep = state.get("corrections", [])
+                twin_core.reset_chat()
+                s2 = twin_core.load_chat()
+                s2["corrections"] = keep
+                twin_core.save_chat(s2)
+                st.rerun()
+            with st.expander("看人格底座全文", expanded=False):
+                for nm, txt in twin_core.load_persona().items():
+                    st.markdown(f"**{nm}**")
+                    st.markdown(txt)
+
+    with right:
+        _chat = st.container(height=410, border=True, key="oa_twin_chat")
+        with _chat:
+            for m in state["messages"]:
+                with st.chat_message("assistant" if m["role"] == "assistant" else "user"):
+                    st.markdown(m["content"])
+            if not state["messages"] and not pending:
+                st.caption("试一句：你的 RAG 系统检索出来全是错的，你怎么办？")
+
+            if pending:
+                with st.chat_message("assistant"):
+                    with st.spinner("分身思考中…"):
+                        try:
+                            twin_core.reply(state, pending, lambda p: ask_chat(p))
+                        except Exception as e:
+                            st.error(str(e))
+                st.session_state["twin_spoke_at"] = time.time()
+                st.rerun()
+
+        q = st.chat_input("问分身一个问题（面试里卡住的也可以扔给它）", key="twin_chat_in")
+        if q:
+            st.session_state["_twin_pending"] = q
+            st.rerun()
 
     st.markdown("---")
     st.markdown("##### 投前定制（自我介绍 / 反问清单）")
@@ -324,6 +451,12 @@ def twin_practice_section(profile: str):
             st.markdown(st.session_state["askback_out"])
     else:
         st.caption("先到「🎯 找工作 → 岗位库」添加岗位，才能按目标公司定制。")
+
+
+def page_twin_digital():
+    """数字分身（独立页）：虚拟人形象 + 多轮对话，第一眼就看得出是个“虚拟人”。"""
+    profile = read_text(PROFILE_PATH) or read_text(ME_PATH)
+    twin_practice_section(profile)
 
 
 def twin_review_section(profile: str):
@@ -393,8 +526,17 @@ def page_show():
         ]
         cols = st.columns(4)
         for col, (label, ok, hint) in zip(cols, items):
-            col.markdown(f"**{label}**\n\n" + ("✅ 已就绪" if ok else "❌ 还没有"))
-            col.caption(hint)
+            badge = ('<span class="oa-tag oa-tag-green">已就绪</span>' if ok
+                     else '<span class="oa-tag oa-tag-red">还没有</span>')
+            col.markdown(
+                f'<div class="oa-card" style="padding:12px 14px;text-align:center">'
+                f'<div style="font-size:13px;font-weight:650;color:var(--slate-800)">{label}</div>'
+                f'<div style="margin:7px 0 5px">{badge}</div>'
+                f'<div style="font-size:11.5px;color:var(--slate-500)">{hint}</div></div>',
+                unsafe_allow_html=True)
+        ready = sum(1 for _, ok, _ in items if ok)
+        st.caption(f"对外就绪度：**{ready} / {len(items)}**　·　"
+                   "四项齐了再发链接，HR 打开就是完整的名片页。")
         if not all(ok for _, ok, _ in items):
             if st.button("去补齐（照片 / 简历 / 模板）", key="show_fix"):
                 goto_page("resume")

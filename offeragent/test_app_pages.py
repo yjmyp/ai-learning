@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-逐页巡检：把 10 个导航页都点一遍，检查有没有报错，并给每页存一张截图。
+逐页巡检：把 12 个导航页都点一遍，检查有没有报错，并给每页存一张截图。
 
 跑法：python offeragent\test_app_pages.py
 输出：offeragent/data/shots/page_*.png
@@ -36,6 +36,7 @@ APP = "http://localhost:8501"
 # 原生多页导航：每页有真实 URL，直接按 URL 巡
 PLAN = [("today", "/"), ("jobs", "/jobs"), ("match", "/match"),
         ("resume", "/resume"), ("apply", "/apply"), ("records", "/records"),
+        ("agent", "/agent"), ("twin", "/twin"),
         ("distill", "/distill"), ("interview", "/interview"),
         ("show", "/show"), ("settings", "/settings")]
 ERR_KWS = ["Traceback", "StreamlitDuplicateElementId", "KeyError",

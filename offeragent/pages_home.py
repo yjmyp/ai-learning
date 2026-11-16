@@ -33,11 +33,18 @@ import resume_clean
 import resume_templates
 
 def page_distill_chat():
-    """问答式自我蒸馏：像聊天一样，一次问一个问题。"""
-    hero("自我蒸馏", "问答式。一次一个问题，答完 15 题自动生成 6 份档案")
+    """问答式自我蒸馏：像聊天一样一次问一个问题；答得太空会追问一层。"""
+    hero("自我蒸馏",
+         f"问答式。一次一个问题，答得太空会追问一层；答完 {len(distill.ALL_QUESTIONS)} 题生成 {len(distill.OUTPUT_NAMES)} 份档案")
     state = distill_chat.load()
     done, total = distill_chat.progress(state)
-    st.progress(done / total, text=f"已答 {done} / {total} 题")
+    cov = distill_chat.coverage(state)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("已回答", f"{done} / {total}")
+    m2.metric("信息充分度", f"{cov['score']} / 100")
+    m3.metric("追问补充", f"{cov['followups']} 条")
+    st.progress(done / total, text=f"问答进度 {done}/{total}")
 
     if not state["history"]:
         distill_chat.start(state)
@@ -49,12 +56,20 @@ def page_distill_chat():
 
     if done >= total:
         st.divider()
+        if cov["score"] < 70:
+            st.warning(f"信息充分度 {cov['score']}/100，偏低。生成出来的档案会有大段"
+                       f"「未提供」。还空着的题：")
+            for title, q in cov["missing"][:6]:
+                st.markdown(f"- **{title}** · {q}")
         c1, c2 = st.columns([1, 1])
-        if c1.button("🧬 生成 6 份档案", type="primary", key="chat_gen"):
+        gen_label = (f"🧬 生成 {len(distill.OUTPUT_NAMES)} 份档案" if cov["score"] >= 70
+                     else "仍然生成（质量会打折）")
+        if c1.button(gen_label, type="primary", key="chat_gen"):
             with st.spinner("蒸馏中…（约 20 秒）"):
                 try:
                     outputs = distill.distill(
-                        {"answers": state["answers"], "followups": {}},
+                        {"answers": state["answers"],
+                         "followups": state["followups"]},
                         lambda p: ask_chat(p))
                     st.success("已生成：" + "、".join(outputs.keys()))
                     next_step("profile_done")
@@ -67,7 +82,9 @@ def page_distill_chat():
             distill_chat.reset()
             st.rerun()
     else:
-        answer = st.chat_input("在这里回答；写不出可以输入「跳过」")
+        placeholder = ("补充一下刚才那条（越具体越好，有数字更好）"
+                       if state.get("pending") else "在这里回答；写不出可以输入「跳过」")
+        answer = st.chat_input(placeholder)
         if answer:
             with st.spinner("记下了…"):
                 try:
@@ -76,38 +93,44 @@ def page_distill_chat():
                     st.error(str(e))
             st.rerun()
 
-    with st.expander("看已答内容 / 重新开始"):
-        st.json(state["answers"], expanded=False)
+    with st.expander("看已答内容 / 追问补充 / 重新开始"):
+        st.json({"answers": state["answers"],
+                 "followups": state["followups"]}, expanded=False)
         if st.button("↺ 清空并重新开始", key="chat_reset2"):
             distill_chat.reset()
             st.rerun()
 
-
-def onboarding_panel():
-    """首屏引导：缺什么就给什么，一键跳过去。"""
-    todo = []
-    if not PROFILE_PATH.exists():
-        todo.append(("还没有「个人画像」——匹配和话术都依赖它",
-                     "distill", "花 10 分钟答完 15 题就有"))
-    jobs = list_jobs()
-    if not jobs:
-        todo.append(("岗位库是空的", "jobs", "给关键词搜一次岗，勾选入库"))
-    elif not any(m.get("match_score") is not None for _, m, _ in jobs):
-        todo.append(("岗位还没有匹配度", "match", "跑一次就知道值不值得投"))
-    if not any(m.get("status") in ("已投", "面试中", "已拒", "Offer")
-               for _, m, _ in jobs):
-        todo.append(("还没投出去过", "apply", "话术在这里生成，发送由你按"))
-
-    if not todo:
-        return
-    st.markdown("### 🚩 还差这几步就能投递")
-    for text, target, hint in todo:
-        c1, c2 = st.columns([4, 1])
-        c1.markdown(f"- **{text}**　<span style='color:#93A1AF;font-size:12.5px'>{hint}</span>",
-                    unsafe_allow_html=True)
-        if c2.button("去处理", key=f"ob_{target}"):
-            goto_page(target)
-    st.divider()
+    with st.expander("🗂 档案版本 · 对比与证据", expanded=False):
+        _vs = distill.list_versions()
+        if not _vs:
+            st.caption("还没有历史版本。生成一次档案后，这里会永久保留最近 20 版，"
+                       "并记下每一版基于哪些回答。")
+        else:
+            _labels = [f"{v.get('created_at', v['version'])} · "
+                       f"{v.get('answered', 0)}/{v.get('total', 0)} 题 · {v['version']}"
+                       for v in _vs]
+            _new_i = st.selectbox("新版本", range(len(_vs)), index=0,
+                                  format_func=lambda i: _labels[i], key="ver_new")
+            _old_i = st.selectbox("对比旧版本", range(len(_vs)),
+                                  index=min(1, len(_vs) - 1),
+                                  format_func=lambda i: _labels[i], key="ver_old")
+            _new = _vs[_new_i]["version"]
+            _old = _vs[_old_i]["version"]
+            _meta = distill.load_version(_new).get("manifest") or {}
+            st.caption(f"本版基于 **{_meta.get('answered', 0)}** 个回答"
+                       + (f"，涉及：{ '、'.join(_meta.get('answer_keys') or []) }"
+                          if _meta.get("answer_keys") else ""))
+            if st.button("看这一版的原始回答（证据）", key="ver_evidence"):
+                _ans = distill.load_version(_new).get("answers") or {}
+                st.json(_ans, expanded=True)
+            if _old == _new:
+                st.caption("选两个不同版本才能对比。")
+            else:
+                _diff = distill.diff_versions(_old, _new)
+                if _diff.strip():
+                    st.code(_diff, language="diff")
+                else:
+                    st.caption("两版内容一致（可能只是重新生成了相同文本）。")
 
 
 def page_today():
@@ -223,13 +246,17 @@ def page_today():
                 else:
                     st.warning("打开失败，请手动复制链接：" + url)
             if b3.button("✅ 标记已投", key=f"a_{name}"):
-                meta["status"] = "已投"
-                meta["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                save_meta(name, meta)
-                apply_assist.log_application(
-                    name, meta, st.session_state.get(key, ""))
-                st.success("已记录投递。刷新后它会从待投清单消失。")
-                next_step("applied")
+                gate = check_apply_allowed(name, meta)
+                if not gate["allowed"]:
+                    st.warning(gate["reason"])
+                else:
+                    meta["status"] = "已投"
+                    meta["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    save_meta(name, meta)
+                    apply_assist.log_application(
+                        name, meta, st.session_state.get(key, ""))
+                    st.success("已记录投递。刷新后它会从待投清单消失。")
+                    next_step("applied")
 
             talk = st.session_state.get(key, "")
             if talk:
@@ -277,7 +304,7 @@ def page_report():
             st.markdown(f"- **{r.get('company') or r['job']}** · {r['job']}"
                         f" · {r.get('score', '')} · {r.get('time', '')[11:16]}")
     else:
-        st.info("今天还没有投递记录。投完在「今日行动」点一下「标记已投」就会记进来。")
+        empty_state("今天还没有投递记录", "投完点一下「标记已投」，这里就会记进来。", icon="📮")
 
     st.divider()
     if st.button("📝 生成今天的日报（调用 DeepSeek）", type="primary"):
@@ -345,13 +372,13 @@ def page_data_log():
             st.plotly_chart(v41.funnel_fig(fn["submitted"], fn["interviewed"], fn["offers"]),
                             use_container_width=True)
         else:
-            st.caption("还没有投递记录。投出第一份后这里会出现漏斗。")
+            empty_state("还没有投递记录", "投出第一份后，这里会出现漏斗。", icon="🔻")
     with g2:
         st.markdown("##### 近 14 天投递趋势")
         if rows:
             st.plotly_chart(v41.weekly_fig(rows), use_container_width=True)
         else:
-            st.caption("还没有投递记录。")
+            empty_state("还没有投递记录", "投出第一份后，这里会出现趋势。", icon="📈")
 
     active = [j for j in jobs if j[1]["status"] != "排除"]
     fig = rank_bar(active)
@@ -421,7 +448,7 @@ def page_data_log():
             st.dataframe(_slim, use_container_width=True)
         st.caption("口径：匹配分由 Agent 引擎自动计算并落盘；投递决定永远由人做——机器算分，人做决定。")
     else:
-        st.caption("还没有 Agent 运行记录。去「找工作 → Agent 流程」跑一次，这里就会出现匹配分与运行轨迹。")
+        empty_state("还没有 Agent 运行记录", "去「找工作 → Agent 流程」跑一次，这里会出现匹配分与运行轨迹。", icon="🤖")
 
     st.markdown("##### 🔍 分数对账（单一权威源：岗位库 meta vs 日志历史快照）")
     _audit = audit_scores()
